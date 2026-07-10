@@ -9,7 +9,7 @@
 //! xled, vendored here verbatim (see DESIGN.md, "Addressing strategy"). When `xaddr` is
 //! extracted into a shared crate, these move there and both tools depend on it.
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct Table {
     /// Column-name overlay. `None` when the file has no header row.
     pub header: Option<Vec<String>>,

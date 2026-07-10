@@ -174,22 +174,23 @@ fn run(cli: Cli) -> Result<()> {
         }
         Verb::Pivot(a) => {
             let (table, source) = load(&a.common)?;
-            let out = verbs::pivot(&table)?;
+            let out = verbs::pivot(&table, &a.names_from, &a.values_from)?;
             emit(&out, &a.common, source)
         }
         Verb::Split(a) => {
+            let into = a.into.as_deref().map(parse_list);
             let (table, source) = load(&a.common)?;
-            let out = verbs::split(&table)?;
+            let out = verbs::split(&table, &a.col, &a.sep, into.as_deref())?;
             emit(&out, &a.common, source)
         }
         Verb::Explode(a) => {
             let (table, source) = load(&a.common)?;
-            let out = verbs::explode(&table)?;
+            let out = verbs::explode(&table, &a.col, &a.sep)?;
             emit(&out, &a.common, source)
         }
         Verb::Merge(a) => {
             let (table, source) = load(&a.common)?;
-            let out = verbs::merge(&table)?;
+            let out = verbs::merge(&table, &a.cols, &a.sep, &a.into)?;
             emit(&out, &a.common, source)
         }
         Verb::Transpose(a) => {
@@ -209,6 +210,12 @@ fn parse_pair(s: &str, flag: &str) -> Result<(String, String)> {
         )));
     }
     Ok((parts[0].to_string(), parts[1].to_string()))
+}
+
+/// Split a comma-separated `--into` list into owned names (for `split`). Empties are kept as-is;
+/// the verb decides what a blank name means.
+fn parse_list(s: &str) -> Vec<String> {
+    s.split(',').map(str::to_string).collect()
 }
 
 /// Load the input table from the file or piped stdin. Returns the table and the source path
