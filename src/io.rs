@@ -1,0 +1,90 @@
+//! Read and write CSV/DSV. Tolerant on input (ragged rows, flexible widths); the `csv`
+//! crate handles quoting and embedded newlines. Values are kept as strings so leading
+//! zeros and long IDs survive a reshape untouched.
+
+use crate::errors::{Result, XshapeError};
+use crate::model::Table;
+use csv::{ReaderBuilder, WriterBuilder};
+use std::path::Path;
+
+fn io_err(e: impl std::fmt::Display) -> XshapeError {
+    XshapeError::Io(e.to_string())
+}
+
+/// Parse CSV/DSV text into a table. When `has_header`, the first record becomes the
+/// name overlay; otherwise every record is data (columns reachable only by letter).
+pub fn read_str(data: &str, delim: u8, has_header: bool) -> Result<Table> {
+    let mut rdr = ReaderBuilder::new()
+        .delimiter(delim)
+        .has_headers(false)
+        .flexible(true)
+        .from_reader(data.as_bytes());
+
+    let mut records: Vec<Vec<String>> = Vec::new();
+    for rec in rdr.records() {
+        let rec = rec.map_err(io_err)?;
+        records.push(rec.iter().map(|s| s.to_string()).collect());
+    }
+
+    let (header, rows) = if has_header && !records.is_empty() {
+        let h = records.remove(0);
+        (Some(h), records)
+    } else {
+        (None, records)
+    };
+
+    Ok(Table { header, rows, delim })
+}
+
+/// Read a file, choosing the delimiter from its extension unless one is given.
+pub fn read_file(path: &str, delim: Option<u8>, has_header: bool) -> Result<Table> {
+    sniff_and_warn(path);
+    let data = std::fs::read_to_string(path)?;
+    // UTF-8 BOM from Excel "Save as CSV UTF-8" — strip it so the first column
+    // name doesn't carry a U+FEFF character.
+    let trimmed = data.strip_prefix('\u{FEFF}').unwrap_or(&data);
+    let delim = delim.unwrap_or_else(|| default_delim(path));
+    read_str(trimmed, delim, has_header)
+}
+
+/// Sniff the file head for non-UTF-8 encodings and emit a one-line iconv hint when
+/// warranted. Sniff failures are silently ignored — the downstream read surfaces a
+/// clearer error if the file is really unreadable.
+fn sniff_and_warn(path: &str) {
+    let Ok(s) = encsniff::sniff_file(path) else { return };
+    if s.action != encsniff::Action::Warn {
+        return;
+    }
+    if let Some(enc) = s.encoding {
+        eprintln!("warning: {path} appears to be {enc} encoded.");
+        if let Some(hint) = &s.hint {
+            eprintln!("hint: {hint}");
+        }
+    }
+}
+
+/// `\t` for `.tsv`, otherwise `,`.
+pub fn default_delim(path: &str) -> u8 {
+    match Path::new(path).extension().and_then(|e| e.to_str()) {
+        Some("tsv") => b'\t',
+        _ => b',',
+    }
+}
+
+/// Serialize the whole table back to CSV/DSV text (header overlay first, then data rows).
+pub fn serialize(table: &Table) -> Result<String> {
+    let mut wtr = WriterBuilder::new()
+        .delimiter(table.delim)
+        .flexible(true)
+        .from_writer(Vec::new());
+
+    if let Some(h) = &table.header {
+        wtr.write_record(h).map_err(io_err)?;
+    }
+    for row in &table.rows {
+        wtr.write_record(row).map_err(io_err)?;
+    }
+
+    let bytes = wtr.into_inner().map_err(io_err)?;
+    String::from_utf8(bytes).map_err(io_err)
+}

@@ -1,0 +1,47 @@
+[package]
+name = "xshape"
+homepage = "https://excelano.com/xshape/"
+version = "0.1.0"
+edition = "2021"
+description = "reshape tabular data — pivot, unpivot, split, merge, explode, transpose — without touching a value"
+license = "MIT"
+authors = ["David M. Anderson"]
+repository = "https://github.com/excelano/xshape"
+readme = "README.md"
+keywords = ["csv", "reshape", "pivot", "tabular", "unpivot"]
+categories = ["command-line-utilities", "text-processing"]
+
+[[bin]]
+name = "xshape"
+path = "src/main.rs"
+
+[dependencies]
+csv = "1"
+clap = { version = "4", features = ["derive"] }
+encsniff = "0.1.0"
+
+[package.metadata.dist]
+formula = "xshape"
+
+[package.metadata.deb]
+maintainer = "David M. Anderson <david.anderson@excelano.com>"
+extended-description = """
+xshape changes the geometry of a single table — pivot, unpivot, transpose, split
+one column into several, merge several into one, explode a delimited cell into
+rows — without ever changing, filtering, or aggregating a value. Every input cell
+reappears unchanged; a pivot errors rather than silently sum on a collision. It
+shares xled's column-addressing dialect (letters, [bracketed names], ranges), so
+the tabular family reads as one language with different verbs. Editing values is
+xled's job; querying the row set is xql's."""
+section = "utils"
+priority = "optional"
+depends = "libc6, libgcc-s1"
+assets = [
+    ["target/release/xshape", "usr/bin/", "755"],
+    ["README.md", "usr/share/doc/xshape/README.md", "644"],
+    ["LICENSE", "usr/share/doc/xshape/copyright", "644"],
+]
+
+[profile.dist]
+inherits = "release"
+lto = "thin"

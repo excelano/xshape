@@ -1,6 +1,6 @@
 # xshape — design
 
-**Status:** Design seed, 2026-07-10. **Parked** — captured while the idea is fresh; the active session is carrying [xray](https://github.com/excelano/xray) forward instead. Name: `xshape` (x-family + reshape). crates.io availability **not yet verified**.
+**Status:** In build, 2026-07-10. Design seed settled against the real corpus this session; decisions below are locked and Phase 1 scaffolding is underway. Name: `xshape` (x-family + reshape). crates.io name **`xshape` confirmed free** (404 on the sparse index for both `xshape` and `x-shape` — no `x-ray`-style workaround needed).
 
 **One line:** header-aware structural reshaping for a single table — pivot, unpivot, transpose, split, merge, explode — the missing verb between xled (which edits values but never moves them) and xql (which queries the row set but never restructures the axes).
 
@@ -53,15 +53,33 @@ xshape must speak the **same addressing dialect as xled** — column letters (`C
 - Format conversion (`.xlsx`/JSON ↔ CSV) → office-convert / ditto. (This was a third candidate tool, deliberately *not* built — the conversion surface is already half-owned.)
 - Profiling / "what is this file" → **xray**.
 
-## Open questions — settle against the real corpus next session
+## Settled decisions — 2026-07-10, against the `~/xray-corpus` client tables
 
-1. **Vocabulary lineage.** Borrow tidyr (`pivot_longer`/`pivot_wider`), pandas (`melt`/`pivot`), or Miller (`reshape`/`nest`) verbatim for the subcommand names? Pick the one lineage with the highest instant-recognition for an LLM and stay faithful to it; do not blend. Leaning tidyr's gather/spread mental model with plain-English subcommand names (`pivot`/`unpivot`).
-2. **Collision policy on pivot.** Hard error is the default per the boundary rule. Offer an explicit `--on-collision first|last|error` escape hatch, or refuse entirely and make the user dedup upstream with xql? Refusing is more honest and keeps the boundary bright.
-3. **Does `explode` belong?** It changes row count. It is pure reshape by the geometry test, but it is the one verb that could be argued into xql. Decide deliberately.
-4. **Preview model.** Inherit xled's preview-before-commit wholesale. Reshape is more structurally destructive than a cell edit, so the preview matters *more*, not less — show the new header row and a few rows of the new grid.
-5. **REPL or runner-only?** xled earns its REPL from iterative cell-scrubbing. Reshape is more often a single decisive move; runner-only may be the honest scope. Park until there's usage.
-6. **Header-row handling in split/merge.** When a column splits, what do the new headers become (`col_1`/`col_2`, a supplied list, a regex capture-group name)? When columns merge, which header survives?
+All six open questions are now closed. Where the corpus drove the call, the evidence is cited.
 
-## First move next session
+1. **Vocabulary lineage — SETTLED: plain-English verbs, tidyr semantics.** Subcommands are `unpivot`, `pivot`, `split`, `explode`, `merge`, `transpose`, carrying tidyr's mental model but not its names. Rejected tidyr's own `gather`/`spread` (deprecated) and pandas `melt`/`cast` (direction is ambiguous). The reference doc maps each verb to its tidyr/pandas/Miller analog; the CLI itself stays plain English because `unpivot` has the highest instant-recognition for an LLM.
+2. **Collision policy on pivot — SETTLED: error-only, no escape hatch.** A `--on-collision first|last` would *drop* a cell, which breaks the core rule that every input cell reappears unchanged. On a collision `pivot` errors and the message names xql/DuckDB for the dedup or aggregation. Refusing keeps the boundary bright.
+3. **Does `explode` belong? — SETTLED: yes, and it is core, not deferred.** The geometry test already passed it (no predicate, no new information, no aggregation); the corpus settles the priority. Your AI-analysis contract tables are full of `; `-delimited list cells (`vendor_aliases`, `related_contracts`, `application_names`, `integration_points`, `secondary_categories`) across ~20 files — one contract row wants to become one row per application. That pull is as strong as unpivot's, so `explode` ships in the core wave.
+4. **Preview model — SETTLED: inherit xled exactly.** Reshaped table goes to **stdout by default** (stdout *is* the preview — you see the whole new grid), and `-i` / `--in-place[=.bak]` commits back to the file, sed-style, matching xled's `main.rs`. No new concepts; the family stays one dialect.
+5. **REPL or runner-only? — SETTLED: runner-only for v1.** Reshape is a single decisive move, not the iterative cell-scrubbing that earns xled its REPL. Park the REPL until real usage asks for it.
+6. **Header handling & the separator — SETTLED, and the separator is a "never guess" call.** `split` names new columns `<name>_1`, `<name>_2`, overridable with `--into a,b,c` (tidyr's `into=`); `merge` takes a required `--into newname`. Crucially, `split`/`explode`/`merge` require an **explicit `--sep` with no inference**, because the corpus proves the two obvious defaults are unsafe: comma appears *inside* values (`Sirius Computer Solutions, LLC`) and slash appears in dates and free text (`06/05/23`, `S010222/S011253/S060120`). The dominant real delimiter is semicolon-space, but the tool never assumes it — same "never coerce a value you didn't ask it to" discipline as xled, one level up.
 
-Settle the vocabulary lineage (open question 1) against the real corpus in `~/xled-corpus`, because every subcommand name and its flags depend on it, and lock the pivot collision policy (2) since it is the decision that defines the tool's boundary. Everything else is downstream of those two.
+## Corpus-ranked build order
+
+pivot is the theoretical inverse and defines the collision boundary, but the corpus does not pull for it (the `metric`/`category` header hits were false positives — classification columns, not long key/value tables). The data wants unpivot and explode first.
+
+| Rank | Verb | Corpus evidence |
+|------|------|-----------------|
+| 1 | **unpivot** | `fy_spending_summary`, `fy_spending_detail`, `coverage_detail` — `contract_id` + `fy2020…fy2026` spread; the xql query-blocker |
+| 2 | **explode** | ~20 files with `; `-delimited list cells (the AI-analysis output shape) |
+| 3 | **split** | same list cells when the target is columns, not rows; feeds the others (merged `S010.../S011...` keys) |
+| 4 | **pivot** | no corpus pull; built for the boundary rule and inverse symmetry |
+| 5 | **merge / transpose** | speculative — `full_contract_string` vs its parts hints merge round-trips exist; transpose is the rare "arrived sideways" case |
+
+## Addressing strategy — SETTLED: copy-now, extract-later (option c)
+
+xshape must speak xled's addressing dialect (column letters, `[bracketed names]`, A1 ranges), which today lives baked into xled's `resolver.rs`/`parser.rs` (~1,180 lines), not a shared crate. Rather than refactor a shipped, published tool to bootstrap an unbuilt one, vendor xled's column/range parsing into xshape verbatim now (with its tests), get xshape proven, then extract a shared `xaddr` crate in a dedicated low-risk refactor once both tools are stable. This mirrors how `encsniff` became a shared lib dep — extracted after the fact, not up front — and still honors "share the spec from day one," because xled's parser *is* the spec, copied faithfully.
+
+## First move
+
+Scaffold Phase 1 from xray's template (Cargo layout, clap-derive CLI shell, `-V`/`-h` standard, csv + encsniff + anstream, the `-i` commit model, and the `install.sh`/`uninstall.sh`/`RELEASING.md`/`SECURITY.md`/`dist-workspace.toml` release plumbing), then vendor xled's addressing, then implement verbs in the corpus-ranked order above.
