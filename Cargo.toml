@@ -31,8 +31,10 @@ one column into several, merge several into one, explode a delimited cell into
 rows — without ever changing, filtering, or aggregating a value. Every input cell
 reappears unchanged; a pivot errors rather than silently sum on a collision. It
 shares xled's column-addressing dialect (letters, [bracketed names], ranges), so
-the tabular family reads as one language with different verbs. Editing values is
-xled's job; querying the row set is xql's."""
+the family reads as one language with different verbs.
+Part of the Excelano tabular family — four small tools split by what changes:
+xray observes and changes nothing, xled edits cell values, xshape changes the
+grid's shape, xql queries the row set."""
 section = "utils"
 priority = "optional"
 depends = "libc6, libgcc-s1"
