@@ -144,7 +144,9 @@ struct TransposeArgs {
 fn main() {
     let cli = Cli::parse_from(normalize_in_place(std::env::args()));
     if let Err(e) = run(cli) {
-        eprintln!("{e}");
+        // Every diagnostic names the tool that raised it, so a message in a
+        // pipeline of family tools points at the one that objected.
+        eprintln!("xshape: {e}");
         exit(1);
     }
 }
