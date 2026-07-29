@@ -50,9 +50,9 @@ enum Verb {
 struct Common {
     /// input file (CSV/TSV); omit to read stdin
     file: Option<String>,
-    /// field delimiter (defaults to ',', or tab for a .tsv file)
-    #[arg(short, long)]
-    delim: Option<char>,
+    /// field delimiter, `\t` for tab (defaults to ',', or tab for a .tsv file)
+    #[arg(short, long, value_name = "CHAR", value_parser = xio::parse_delim)]
+    delim: Option<u8>,
     /// treat the first row as data, not a header
     #[arg(long)]
     no_header: bool,
@@ -222,7 +222,7 @@ fn parse_list(s: &str) -> Vec<String> {
 /// (`None` for stdin), which `emit` needs to honor `-i`.
 fn load(c: &Common) -> Result<(xshape::model::Table, Option<String>)> {
     let has_header = !c.no_header;
-    let delim = c.delim.map(|ch| ch as u8);
+    let delim = c.delim;
     match &c.file {
         Some(path) => Ok((xio::read_file(path, delim, has_header)?, Some(path.clone()))),
         None => {

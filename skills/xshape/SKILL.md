@@ -62,8 +62,9 @@ grid in view before you commit. `-i`/`--in-place[=.bak]` writes it back to the f
 goes to stdout, advisory notices to stderr, so `xshape … file.csv > out.csv` is always
 safe. `-i` needs a file argument, not piped stdin.
 
-Common flags (every verb): `-d/--delim <char>` (delimiter; defaults to `,`, or tab for
-`.tsv`), `--no-header` (treat row 1 as data), `-i/--in-place[=SUFFIX]` (commit in place).
+Common flags (every verb): `-d/--delim <char>` (delimiter, `\t` for tab; defaults to `,`,
+or tab for `.tsv`), `--no-header` (treat row 1 as data), `-i/--in-place[=SUFFIX]` (commit
+in place).
 
 ## Addressing — the same dialect as xled
 
