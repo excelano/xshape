@@ -95,7 +95,7 @@ Columns are addressed like xled: a letter (`C`, `AF`), a bracketed header name (
 
 ## Use it from Claude Code
 
-xshape was built for AI coding agents as much as for people, so the repo ships an official [Claude Code](https://docs.claude.com/en/docs/claude-code) skill under [`skills/xshape/`](skills/xshape/). It teaches an agent the six verbs, the shared addressing dialect, the three boundary rules (geometry only, explicit separators, no silent drop or combine), and — with a tidyr/pandas/Miller translation table — how to reach for `xshape` instead of a pandas `melt` the moment a reshape is needed. Drop it into your personal skills directory:
+xshape was built for AI coding agents as much as for people, so the repo ships an official [Claude Code](https://docs.claude.com/en/docs/claude-code) skill under [`skills/xshape/`](skills/xshape/). It teaches an agent the reshape verbs, the shared addressing dialect, the boundary rules (geometry only, explicit separators, no silent drop or combine), and — with a tidyr/pandas/Miller translation table — how to reach for `xshape` instead of a pandas `melt` the moment a reshape is needed. Drop it into your personal skills directory:
 
 ```sh
 mkdir -p ~/.claude/skills/xshape

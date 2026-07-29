@@ -39,7 +39,7 @@ Single-column flags (`--col`, `--names-from`, `--values-from`) take exactly one 
 reject a range or list. Set flags (`--cols`) take the full grammar. A `[name]` against a
 file with no header errors and says so; a letter past the table's width errors.
 
-## The six verbs
+## The verbs
 
 ### `unpivot` — wide → long
 
@@ -147,7 +147,7 @@ these, this is the mapping:
 | many cols → one | `unite(into, cols, sep)` | `df[cols].agg(sep.join)` | `merge-fields` | `merge --cols … --sep … --into …` |
 | swap axes | `t()` (base R) | `df.T` | `mlr … reshape`/`--transpose` | `transpose` |
 
-Two differences from all three: xshape **requires an explicit separator** (no default, no
+Two differences from all of them: xshape **requires an explicit separator** (no default, no
 inference), and its **pivot refuses to aggregate** — where pandas silently takes a mean on
 duplicate index/column pairs, xshape errors.
 

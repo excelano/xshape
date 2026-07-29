@@ -34,7 +34,7 @@ re-running the install one-liner from the README.
 
 ## The family, and the one rule that places xshape
 
-Three tools act on the same delimited file; a fourth (xray) only looks. The split is by
+Several tools act on the same delimited file, and xray only looks. The split is by
 *what changes*:
 
 - **xled edits** — rewrites *cell values* in place (strip currency, restore leading zeros,
@@ -86,7 +86,7 @@ not.
 | `merge` | several cols → one | `--cols`, `--sep`, `--into` | no |
 | `transpose` | swap axes | — | rows ↔ cols |
 
-Three rules run through all of them, and they are what make xshape trustworthy:
+Three rules run through every verb, and they are what make xshape trustworthy:
 
 1. **No value is ever altered.** `split`/`explode`/`merge` cut and join on the **literal
    `--sep`** you give — spaces included — and never trim. `--sep "; "` and `--sep ";"` are
