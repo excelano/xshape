@@ -27,10 +27,10 @@ restructures the axes).
 
 The authoritative sources for xshape's behavior are the binary itself (`xshape --help`,
 `xshape <verb> --help`) and the [README](https://github.com/excelano/xshape/blob/main/README.md);
-if anything here conflicts with them, they win. These recipes assume **xshape 0.1.0 or
-newer**. Check with `xshape --version`; upgrade with `sudo apt install --only-upgrade
-xshape` (Debian/Ubuntu), `brew upgrade xshape` (macOS), or by re-running the install
-one-liner from the README.
+if anything here conflicts with them, they win. If a verb or flag described here is
+missing from `xshape --help`, the installed copy predates it: upgrade with `sudo apt
+install --only-upgrade xshape` (Debian/Ubuntu), `brew upgrade xshape` (macOS), or by
+re-running the install one-liner from the README.
 
 ## The family, and the one rule that places xshape
 

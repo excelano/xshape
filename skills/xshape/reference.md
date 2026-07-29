@@ -2,8 +2,8 @@
 
 Complete reference for the reshape verbs. The binary (`xshape <verb> --help`) and the
 [README](https://github.com/excelano/xshape/blob/main/README.md) are authoritative; this
-expands the edge cases and gives the tidyr/pandas/Miller translations. Assumes **xshape
-0.1.0+**.
+expands the edge cases and gives the tidyr/pandas/Miller translations. Any verb or flag
+here that `xshape --help` doesn't list means the installed copy predates it.
 
 ## Invocation and flags
 
