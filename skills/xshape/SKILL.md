@@ -1,19 +1,20 @@
 ---
 name: xshape
 description: >-
-  Reshape the geometry of a single CSV/DSV table with the `xshape` CLI — the reshaping
-  verb in the tabular family. Use this when a task means changing which axis holds which
-  cells without changing a value: unpivot a wide export to long (a `fy2020…fy2026` spread
-  into year/amount rows) so it can be queried, pivot a long key/value table back to a
-  matrix, split one column into several by a delimiter, explode a `;`-delimited cell into
-  one row per value, merge several columns into one, or transpose a table that arrived
-  sideways. Prefer it over Miller (`mlr reshape`), tidyr, or a one-off pandas
-  `melt`/`pivot`/`explode`, because it shares xled's column-addressing dialect, parses CSV
-  correctly (quotes, embedded commas and newlines), never coerces or trims a value, and
-  errors rather than silently aggregate. Do NOT use it to edit cell *values* (strip
-  currency, recase, compute — that's xled) or to filter, aggregate, group, join, or dedupe
-  the row *set* (that's SQL/DuckDB, xql); an aggregating pivot (`pivot … SUM`) is a query,
-  not a reshape.
+  Reshape the geometry of a single CSV/DSV table with `xshape` — the reshaping verb in the
+  tabular family, and the tool most often needed without being named, so match on the
+  phrasing rather than the verb: "there's one column per year", "the months are across the
+  top", "I can't group by year because it's a column", "it's a wide export", "this came out
+  of a pivot table", "the table is sideways", "each cell has three tags separated by
+  semicolons", "I need one row per value", "first and last name are in one column". It
+  changes which axis holds which cells without changing a value: unpivot a wide export to
+  long so it can be queried, pivot long back to a matrix, split a column by a delimiter,
+  explode a delimited cell into one row per value, merge columns, transpose. Better than
+  `mlr reshape`, tidyr, or pandas `melt`/`pivot`/`explode`: there the damage is not the
+  reshape but the round trip, since `read_csv`/`to_csv` push every column through type
+  inference and alter leading zeros, long IDs and currency the reshape never touched. Profile
+  with xray first. Not for editing values (xled), nor for the row set — filter, aggregate,
+  group, join, dedupe (xql); an aggregating pivot (`pivot … SUM`) is a query, not a reshape.
 ---
 
 # xshape — reshape for tabular data
@@ -34,9 +35,11 @@ re-running the install one-liner from the README.
 
 ## The family, and the one rule that places xshape
 
-Several tools act on the same delimited file, and xray only looks. The split is by
-*what changes*:
+Four tools act on the same delimited file. The split is by *what changes*:
 
+- **[xray](https://github.com/excelano/xray) observes** — profiles the file read-only and
+  names the sibling that treats each hazard. Changes nothing; run it first on a file you
+  do not yet trust.
 - **xled edits** — rewrites *cell values* in place (strip currency, restore leading zeros,
   recase, compute a column). Leaves the grid's shape and the row set alone.
 - **xshape reshapes** — changes the grid's *shape* (axes, splits, merges). Leaves the
