@@ -36,6 +36,8 @@ The line that keeps xshape focused: it moves cells between axes and refuses to a
 
 ## Install
 
+Every install line below ends with `xshape --install-skill`. That installs the [Claude Code skill](#use-it-from-claude-code) alongside the binary, which is the one step people reliably skipped when it lived further down the page. Drop it if you do not use Claude Code — the CLI itself does not need it.
+
 ### Debian and Ubuntu
 
 Add the [Excelano apt repository](https://excelano.com/apt/) once:
@@ -47,7 +49,7 @@ curl -fsSL https://excelano.com/apt/setup.sh | sudo sh
 Then:
 
 ```sh
-sudo apt install xshape
+sudo apt install xshape && xshape --install-skill
 ```
 
 Both amd64 and arm64 packages ship with every release.
@@ -55,13 +57,28 @@ Both amd64 and arm64 packages ship with every release.
 ### Homebrew
 
 ```sh
-brew install excelano/tap/xshape
+brew install excelano/tap/xshape && xshape --install-skill
 ```
 
 ### crates.io
 
 ```sh
-cargo install xshape
+cargo install xshape && xshape --install-skill
+```
+
+### Windows
+
+With [WinGet](https://learn.microsoft.com/windows/package-manager/), so `winget upgrade` keeps it current:
+
+```powershell
+winget install Excelano.xshape
+xshape --install-skill
+```
+
+Or run the standalone installer in PowerShell:
+
+```powershell
+powershell -ExecutionPolicy ByPass -c "irm https://github.com/excelano/xshape/releases/latest/download/xshape-installer.ps1 | iex"
 ```
 
 ### Curl (any Linux or macOS)
@@ -95,17 +112,15 @@ Columns are addressed like xled: a letter (`C`, `AF`), a bracketed header name (
 
 ## Use it from Claude Code
 
-xshape was built for AI coding agents as much as for people, so the repo ships an official [Claude Code](https://docs.claude.com/en/docs/claude-code) skill under [`skills/xshape/`](skills/xshape/). It teaches an agent the reshape verbs, the shared addressing dialect, the boundary rules (geometry only, explicit separators, no silent drop or combine), and — with a tidyr/pandas/Miller translation table — how to reach for `xshape` instead of a pandas `melt` the moment a reshape is needed. Drop it into your personal skills directory:
+xshape was built for AI coding agents as much as for people, so the repo ships an official [Claude Code](https://docs.claude.com/en/docs/claude-code) skill under [`skills/xshape/`](skills/xshape/). It teaches an agent the reshape verbs, the shared addressing dialect, the boundary rules (geometry only, explicit separators, no silent drop or combine), and — with a tidyr/pandas/Miller translation table — how to reach for `xshape` instead of a pandas `melt` the moment a reshape is needed. The binary installs it:
 
 ```sh
-mkdir -p ~/.claude/skills/xshape
-for f in SKILL.md reference.md; do
-  curl -fsSL "https://raw.githubusercontent.com/excelano/xshape/main/skills/xshape/$f" \
-    -o ~/.claude/skills/xshape/$f
-done
+xshape --install-skill
 ```
 
-Or, from a clone of this repo, `cp -r skills/xshape ~/.claude/skills/`.
+That writes `~/.claude/skills/xshape/` and stamps in the version it came from, so a later run reports whether the skill has fallen behind the binary rather than leaving you to notice. It is safe to re-run: an unchanged skill reports `already current` and nothing is written. `xshape --uninstall-skill` removes it. Restart Claude Code afterwards, since skills are discovered at session start.
+
+The skill is compiled into the binary, so this works the same however you installed xshape — apt, Homebrew, cargo, the curl one-liner, or a build from source.
 
 ## License
 
