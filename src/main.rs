@@ -9,6 +9,8 @@
 //! sed-style. A reshape always rewrites the whole table, so there is no inspect-vs-mutate split
 //! to guard (unlike xled): `-i` simply needs a file, not piped stdin.
 
+mod skill;
+
 use clap::{Args, Parser, Subcommand};
 use std::fs;
 use std::io::{self, Read, Write};
@@ -22,11 +24,22 @@ use xshape::{io as xio, verbs, Result, XshapeError};
     about = "reshape tabular data — pivot, unpivot, split, merge, explode, transpose",
     long_about = "Change the geometry of a single table — which axis holds which cells — without \
                   ever changing, filtering, or aggregating a value. Cell edits are xled's job; \
-                  querying the row set is xql's."
+                  querying the row set is xql's.",
+    // The verb is optional only so `--install-skill` can stand alone; a bare
+    // `xshape` still prints help rather than falling through to a None verb.
+    arg_required_else_help = true
 )]
 struct Cli {
     #[command(subcommand)]
-    verb: Verb,
+    verb: Option<Verb>,
+
+    /// Install xshape's Claude Code skill into ~/.claude/skills/xshape and exit.
+    #[arg(long)]
+    install_skill: bool,
+
+    /// Remove the installed Claude Code skill and exit.
+    #[arg(long)]
+    uninstall_skill: bool,
 }
 
 #[derive(Subcommand)]
@@ -143,7 +156,21 @@ struct TransposeArgs {
 
 fn main() {
     let cli = Cli::parse_from(normalize_in_place(std::env::args()));
-    if let Err(e) = run(cli) {
+    // Terminal actions: they touch the user's skills directory and nothing
+    // else, so they run before any input is read or any file is opened.
+    if cli.install_skill {
+        exit(skill::install());
+    }
+    if cli.uninstall_skill {
+        exit(skill::uninstall());
+    }
+    // `arg_required_else_help` means a bare `xshape` prints help and never
+    // reaches this, so the only way here without a verb is global flags alone.
+    let Some(verb) = cli.verb else {
+        eprintln!("xshape: no verb given — try `xshape --help`");
+        exit(2);
+    };
+    if let Err(e) = run(verb) {
         // Every diagnostic names the tool that raised it, so a message in a
         // pipeline of family tools points at the one that objected.
         eprintln!("xshape: {e}");
@@ -166,8 +193,8 @@ fn normalize_in_place<I: IntoIterator<Item = String>>(args: I) -> Vec<String> {
         .collect()
 }
 
-fn run(cli: Cli) -> Result<()> {
-    match cli.verb {
+fn run(verb: Verb) -> Result<()> {
+    match verb {
         Verb::Unpivot(a) => {
             let (key, value) = parse_pair(&a.into, "--into")?;
             let (table, source) = load(&a.common)?;
