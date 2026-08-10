@@ -1,48 +1,28 @@
-//! Column addressing — xshape's slice of xled's dialect.
+//! Column addressing — xshape's slice of the shared dialect.
 //!
-//! xled's full address algebra is set algebra over *cells* (regex row-select, intersect,
-//! negate). xshape's verbs are column-oriented, so it vendors only the column half of the
-//! dialect: a spec resolves to an ordered list of column indices. The atoms match xled
-//! exactly — a bijective base-26 letter (`C`, `AF`), or a bracketed header name
-//! (`[first name]`, `[price (USD)]`, `]]` an escaped literal `]`). On top of the atoms:
+//! The grammar itself lives in the `xaddr` crate: letters (`C`, `AF`), bracketed header names
+//! (`[first name]`, `]]` an escaped literal `]`), inclusive ranges in either direction
+//! (`A:D`, `[first]:[last]`), open-ended ranges that run to the table's edge (`B:`, `:C`), and
+//! comma lists mixing all of them. xled resolves the same strings through the same code, so
+//! an address learned in one tool means the same thing in the other.
 //!
-//!   - a range `A:D` / `[first]:[last]` — inclusive, either direction, expanded left→right
-//!   - a comma list `C,E,[foo]` — atoms and ranges in any mix, order preserved, dups kept
-//!
-//! Preserving order matters: `unpivot --cols K,E` gathers K before E because the user said so.
-//! When `xaddr` is extracted into a shared crate this module and `model`'s letter helpers go
-//! with it, and xled depends on the same code instead of its private copy.
+//! What this module contributes is xshape's two policies on top of it. Every verb here is
+//! column-oriented, so an address naming a row or a single cell is rejected rather than
+//! quietly projected onto its column. And bounds are `Strict`: a reshape that ran past the
+//! edge of the table would silently do less than it was asked, which for a destructive verb
+//! is worse than stopping. (xled clamps instead, deliberately — see `xaddr::Bounds`.)
 
-use crate::errors::{Result, XshapeError};
-use crate::model::{letter_to_col, Table};
+use crate::errors::Result;
+use crate::model::Table;
+use xaddr::Bounds;
 
 /// Resolve a column spec to an ordered list of 0-based column indices.
 ///
-/// The spec is a comma-separated list of atoms and ranges. Order is preserved and duplicates
-/// are kept — the caller decides whether repetition is meaningful (it is for `merge`, an error
-/// for `unpivot`). Names require a header; letters do not.
+/// Order is preserved and duplicates are kept — the caller decides whether repetition is
+/// meaningful (it is for `merge`, an error for `unpivot`). Names require a header; letters do
+/// not. Every returned index is inside the table, so callers can use them directly.
 pub fn cols(spec: &str, table: &Table) -> Result<Vec<usize>> {
-    let spec = spec.trim();
-    if spec.is_empty() {
-        return Err(XshapeError::Address("empty column spec".into()));
-    }
-    let mut out = Vec::new();
-    for part in split_top_level(spec)? {
-        let part = part.trim();
-        if part.is_empty() {
-            return Err(XshapeError::Address("empty item in column list".into()));
-        }
-        match split_range(part)? {
-            Some((lo, hi)) => {
-                let a = atom(lo.trim(), table)?;
-                let b = atom(hi.trim(), table)?;
-                let (a, b) = if a <= b { (a, b) } else { (b, a) };
-                out.extend(a..=b);
-            }
-            None => out.push(atom(part, table)?),
-        }
-    }
-    Ok(out)
+    Ok(xaddr::parse(spec)?.columns(table, Bounds::Strict)?)
 }
 
 /// Resolve exactly one column from a spec, rejecting lists and ranges. For verbs that name a
@@ -50,127 +30,12 @@ pub fn cols(spec: &str, table: &Table) -> Result<Vec<usize>> {
 pub fn one_col(spec: &str, table: &Table) -> Result<usize> {
     let cs = cols(spec, table)?;
     if cs.len() != 1 {
-        return Err(XshapeError::Address(format!(
+        return Err(crate::errors::XshapeError::Address(format!(
             "expected a single column, got {} from {spec:?}",
             cs.len()
         )));
     }
     Ok(cs[0])
-}
-
-/// Resolve a single atom — a bracketed `[name]` or a run of letters — to a column index.
-fn atom(s: &str, table: &Table) -> Result<usize> {
-    if let Some(rest) = s.strip_prefix('[') {
-        let name = parse_name(rest)?;
-        return table.name_to_col(&name).ok_or_else(|| {
-            if table.header.is_none() {
-                XshapeError::Address(format!(
-                    "column name [{name}] needs a header row (this file has none — address by letter, or drop --no-header)"
-                ))
-            } else {
-                XshapeError::Address(format!("no column named [{name}]"))
-            }
-        });
-    }
-    if !s.is_empty() && s.chars().all(|c| c.is_ascii_alphabetic()) {
-        return Ok(letter_to_col(s));
-    }
-    Err(XshapeError::Address(format!(
-        "unrecognized column {s:?} — use a letter (C, AF) or a bracketed name ([first name])"
-    )))
-}
-
-/// Parse a bracketed name body (everything after the opening `[`). `]]` is an escaped literal
-/// `]`; a lone `]` closes the name and must be the last character. Matches xled's `parse_name`.
-fn parse_name(body: &str) -> Result<String> {
-    let bytes: Vec<char> = body.chars().collect();
-    let mut name = String::new();
-    let mut i = 0;
-    while i < bytes.len() {
-        if bytes[i] == ']' {
-            if bytes.get(i + 1) == Some(&']') {
-                name.push(']');
-                i += 2;
-            } else if i + 1 == bytes.len() {
-                return Ok(name);
-            } else {
-                return Err(XshapeError::Address(format!(
-                    "trailing text after [name]: {:?}",
-                    bytes[i + 1..].iter().collect::<String>()
-                )));
-            }
-        } else {
-            name.push(bytes[i]);
-            i += 1;
-        }
-    }
-    Err(XshapeError::Address("unterminated [name]".into()))
-}
-
-/// Split a spec on top-level commas — commas inside `[...]` are part of a name, not separators.
-fn split_top_level(spec: &str) -> Result<Vec<String>> {
-    let mut parts = Vec::new();
-    let mut cur = String::new();
-    let mut depth = 0i32;
-    let chars: Vec<char> = spec.chars().collect();
-    let mut i = 0;
-    while i < chars.len() {
-        let c = chars[i];
-        match c {
-            '[' => {
-                depth += 1;
-                cur.push(c);
-            }
-            ']' => {
-                // `]]` inside a name stays inside; otherwise it closes one level.
-                if depth > 0 && chars.get(i + 1) == Some(&']') {
-                    cur.push_str("]]");
-                    i += 2;
-                    continue;
-                }
-                depth -= 1;
-                cur.push(c);
-            }
-            ',' if depth <= 0 => {
-                parts.push(std::mem::take(&mut cur));
-            }
-            _ => cur.push(c),
-        }
-        i += 1;
-    }
-    if depth > 0 {
-        return Err(XshapeError::Address("unterminated [name]".into()));
-    }
-    parts.push(cur);
-    Ok(parts)
-}
-
-/// Split one item on a top-level `:` into (lo, hi), or `None` if it is not a range. A `:`
-/// inside `[...]` is part of a name.
-fn split_range(item: &str) -> Result<Option<(String, String)>> {
-    let chars: Vec<char> = item.chars().collect();
-    let mut depth = 0i32;
-    let mut i = 0;
-    while i < chars.len() {
-        match chars[i] {
-            '[' => depth += 1,
-            ']' => {
-                if depth > 0 && chars.get(i + 1) == Some(&']') {
-                    i += 2;
-                    continue;
-                }
-                depth -= 1;
-            }
-            ':' if depth <= 0 => {
-                let lo: String = chars[..i].iter().collect();
-                let hi: String = chars[i + 1..].iter().collect();
-                return Ok(Some((lo, hi)));
-            }
-            _ => {}
-        }
-        i += 1;
-    }
-    Ok(None)
 }
 
 #[cfg(test)]
@@ -193,7 +58,11 @@ mod tests {
     }
 
     fn headerless() -> Table {
-        Table { header: None, rows: vec![vec!["a".into(), "b".into()]], delim: b',' }
+        Table {
+            header: None,
+            rows: vec![vec!["a".into(), "b".into()]],
+            delim: b',',
+        }
     }
 
     #[test]
@@ -265,5 +134,33 @@ mod tests {
         let t = table();
         assert!(cols("", &t).is_err());
         assert!(cols("A,,B", &t).is_err());
+    }
+
+    /// The five forms xshape used to reject with an error about a column named `""`, while
+    /// xled resolved them. They come from the shared crate now, so the two cannot disagree.
+    #[test]
+    fn open_ended_ranges_now_resolve() {
+        let t = table();
+        assert_eq!(cols("B:", &t).unwrap(), vec![1, 2, 3, 4]);
+        assert_eq!(cols(":C", &t).unwrap(), vec![0, 1, 2]);
+        assert_eq!(cols("[last name]:", &t).unwrap(), vec![2, 3, 4]);
+        assert_eq!(cols(":[last name]", &t).unwrap(), vec![0, 1, 2]);
+    }
+
+    /// Bounds are Strict here: a reshape stops rather than quietly doing less.
+    #[test]
+    fn past_the_last_column_is_refused_not_clamped() {
+        let t = table();
+        let e = cols("A:Z", &t).unwrap_err().to_string();
+        assert!(e.contains("beyond the table's 5 columns"), "got: {e}");
+    }
+
+    /// Rows and cells belong to xled's half of the dialect; a reshape verb takes columns.
+    #[test]
+    fn row_and_cell_addresses_are_rejected() {
+        let t = table();
+        assert!(cols("3", &t).is_err());
+        assert!(cols("$", &t).is_err());
+        assert!(cols("B2", &t).is_err());
     }
 }

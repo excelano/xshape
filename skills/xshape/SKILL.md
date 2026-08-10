@@ -71,13 +71,15 @@ in place).
 
 ## Addressing — the same dialect as xled
 
-Columns are named the way xled names them, so a column you can point at in one tool you
-point at identically here: a **letter** (`C`, `AF` — bijective base-26, past Z too), or a
-**bracketed header name** (`[first name]`, `[price (USD)]` — exact, case-sensitive, `]]`
-for a literal `]`). Verbs that take a *set* of columns (`unpivot --cols`, `merge --cols`)
-also accept **ranges** (`E:K`, `[fy2020]:[fy2026]` — inclusive, either direction) and
-**comma lists** (`[id],D:E,[note]` — order preserved). Names need a header row; letters do
-not.
+Columns are named the way xled names them — one shared implementation, the `xaddr` crate —
+so a column you can point at in one tool you point at identically here: a **letter** (`C`,
+`AF` — bijective base-26, past Z too), or a **bracketed header name** (`[first name]`,
+`[price (USD)]` — exact, case-sensitive, `]]` for a literal `]`). Verbs that take a *set* of
+columns (`unpivot --cols`, `merge --cols`) also accept **ranges** (`E:K`,
+`[fy2020]:[fy2026]` — inclusive, either direction), **open-ended ranges** (`B:`, `:C` —
+running to the table's edge), and **comma lists** (`[id],D:E,[note]` — order preserved).
+Names need a header row; letters do not. Rows (`3`, `$`) and cells (`B2`) are xled's half of
+the dialect and are rejected here, since a reshape verb takes columns.
 
 ## The verbs (what each one does)
 

@@ -76,9 +76,11 @@ pivot is the theoretical inverse and defines the collision boundary, but the cor
 | 4 | **pivot** | no corpus pull; built for the boundary rule and inverse symmetry |
 | 5 | **merge / transpose** | speculative — `full_contract_string` vs its parts hints merge round-trips exist; transpose is the rare "arrived sideways" case |
 
-## Addressing strategy — SETTLED: copy-now, extract-later (option c)
+## Addressing strategy — SETTLED: copy-now, extract-later (option c), and since extracted
 
 xshape must speak xled's addressing dialect (column letters, `[bracketed names]`, A1 ranges), which today lives baked into xled's `resolver.rs`/`parser.rs` (~1,180 lines), not a shared crate. Rather than refactor a shipped, published tool to bootstrap an unbuilt one, vendor xled's column/range parsing into xshape verbatim now (with its tests), get xshape proven, then extract a shared `xaddr` crate in a dedicated low-risk refactor once both tools are stable. This mirrors how `encsniff` became a shared lib dep — extracted after the fact, not up front — and still honors "share the spec from day one," because xled's parser *is* the spec, copied faithfully.
+
+**The extraction happened in August 2026**, and the copy-now half of this plan is worth reading with what it cost. The two implementations were never compared after the copy, and they drifted in six places: xshape rejected all five open-ended forms (`B:`, `:C`, `A:`, `[last]:`, `:[dept]`) with an error naming a column called `""`, and it refused a range running past the last column where xled clamped. A seventh only surfaced during the extraction itself — a literal `[` inside a header name, which xled had a test for and xshape's copy could never parse. None of them were noticed, because nothing existed that could notice. The lesson is not that copy-now was wrong; it is that a copy needs a conformance suite from the day it is made, or the divergence is silent by construction. `xaddr`'s `tests/conformance.rs` is that suite now.
 
 ## First move
 

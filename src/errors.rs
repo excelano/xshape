@@ -39,3 +39,12 @@ impl From<std::io::Error> for XshapeError {
         XshapeError::Io(e.to_string())
     }
 }
+
+/// An address that will not parse and one that names nothing in this table are both `Address`
+/// here. `xaddr` keeps them apart for callers that show errors as you type; a CLI reports the
+/// message either way, so the distinction earns nothing on this side.
+impl From<xaddr::Error> for XshapeError {
+    fn from(e: xaddr::Error) -> Self {
+        XshapeError::Address(e.message)
+    }
+}

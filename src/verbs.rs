@@ -43,16 +43,10 @@ pub fn unpivot(table: &Table, cols_spec: &str, key_name: &str, value_name: &str)
     // A column gathered twice is almost certainly a mistake, and it would duplicate the block.
     let mut seen = std::collections::HashSet::new();
     for &c in &gather {
-        if c >= ncols {
-            return Err(XshapeError::Address(format!(
-                "column {} is beyond the table's {ncols} columns",
-                crate::model::col_to_letter(c)
-            )));
-        }
         if !seen.insert(c) {
             return Err(XshapeError::Address(format!(
                 "column {} appears twice in --cols; each gathered column must be distinct",
-                crate::model::col_to_letter(c)
+                col_to_letter(c)
             )));
         }
     }
@@ -89,7 +83,6 @@ pub fn unpivot(table: &Table, cols_spec: &str, key_name: &str, value_name: &str)
 pub fn explode(table: &Table, col_spec: &str, sep: &str) -> Result<Table> {
     require_sep(sep)?;
     let col = addr::one_col(col_spec, table)?;
-    in_range(col, table.ncols())?;
 
     let mut rows = Vec::with_capacity(table.nrows());
     for r in 0..table.nrows() {
@@ -111,7 +104,6 @@ pub fn explode(table: &Table, col_spec: &str, sep: &str) -> Result<Table> {
 pub fn split(table: &Table, col_spec: &str, sep: &str, into: Option<&[String]>) -> Result<Table> {
     require_sep(sep)?;
     let col = addr::one_col(col_spec, table)?;
-    in_range(col, table.ncols())?;
 
     // Split every row once; keep the pieces so width and overflow are decided from real data.
     let pieces: Vec<Vec<String>> = (0..table.nrows())
@@ -159,8 +151,6 @@ pub fn split(table: &Table, col_spec: &str, sep: &str, into: Option<&[String]>) 
 pub fn pivot(table: &Table, names_from: &str, values_from: &str) -> Result<Table> {
     let name_col = addr::one_col(names_from, table)?;
     let val_col = addr::one_col(values_from, table)?;
-    in_range(name_col, table.ncols())?;
-    in_range(val_col, table.ncols())?;
     if name_col == val_col {
         return Err(XshapeError::Input(
             "--names-from and --values-from must be different columns".into(),
@@ -216,9 +206,6 @@ pub fn pivot(table: &Table, names_from: &str, values_from: &str) -> Result<Table
 /// skipped), so `["a", ""]` with sep `;` becomes `"a;"` — a value change would be xled's job.
 pub fn merge(table: &Table, cols_spec: &str, sep: &str, into: &str) -> Result<Table> {
     let cols = addr::cols(cols_spec, table)?;
-    for &c in &cols {
-        in_range(c, table.ncols())?;
-    }
     if cols.len() < 2 {
         return Err(XshapeError::Input("merge needs at least two columns".into()));
     }
@@ -297,18 +284,6 @@ pub fn transpose(table: &Table) -> Result<Table> {
 fn require_sep(sep: &str) -> Result<()> {
     if sep.is_empty() {
         Err(XshapeError::Input("--sep must be a non-empty separator (xshape never guesses one)".into()))
-    } else {
-        Ok(())
-    }
-}
-
-/// Reject a column address that lands past the table's width.
-fn in_range(col: usize, ncols: usize) -> Result<()> {
-    if col >= ncols {
-        Err(XshapeError::Address(format!(
-            "column {} is beyond the table's {ncols} columns",
-            col_to_letter(col)
-        )))
     } else {
         Ok(())
     }

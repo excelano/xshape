@@ -244,10 +244,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "xaddr"
+version = "0.2.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4573aaeb9b492c539fbd893a11a2c2455a78f4e677e892e18f63ff563922985f"
+
+[[package]]
 name = "xshape"
 version = "0.3.0"
 dependencies = [
  "clap",
  "csv",
  "encsniff",
+ "xaddr",
 ]

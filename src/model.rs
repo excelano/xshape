@@ -5,9 +5,10 @@
 //! an overlay kept separate from the data rows; `None` when the file has no header row.
 //! Ragged rows are tolerated: a missing cell reads as "".
 //!
-//! Column-letter ↔ index is bijective base-26: A=0, Z=25, AA=26, … — the same dialect as
-//! xled, vendored here verbatim (see DESIGN.md, "Addressing strategy"). When `xaddr` is
-//! extracted into a shared crate, these move there and both tools depend on it.
+//! Addressing itself is not here. Column letters, bracketed names, and ranges live in the
+//! `xaddr` crate, which xled uses too, so the dialect is one implementation rather than two
+//! that agree in the middle and drift at the edges. This module only teaches `xaddr` what
+//! shape this table is, via the `Grid` impl below.
 
 #[derive(Clone, Debug)]
 pub struct Table {
@@ -57,43 +58,23 @@ impl Table {
     }
 }
 
-/// Column letters → 0-based index. "A"→0, "Z"→25, "AA"→26. Letters are uppercased first.
-pub fn letter_to_col(s: &str) -> usize {
-    let mut n: usize = 0;
-    for ch in s.chars() {
-        n = n * 26 + (ch.to_ascii_uppercase() as usize - 'A' as usize + 1);
-    }
-    n - 1
-}
+/// Column letters ↔ index lives in `xaddr` now, so xshape and xled cannot drift apart on it.
+pub use xaddr::col_to_letter;
 
-/// 0-based index → column letters. Inverse of [`letter_to_col`].
-pub fn col_to_letter(mut c: usize) -> String {
-    let mut s = Vec::new();
-    loop {
-        s.push(b'A' + (c % 26) as u8);
-        if c < 26 {
-            break;
-        }
-        c = c / 26 - 1;
-    }
-    s.reverse();
-    String::from_utf8(s).unwrap()
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn letters_round_trip() {
-        for (i, s) in [(0, "A"), (25, "Z"), (26, "AA"), (27, "AB"), (51, "AZ"), (52, "BA")] {
-            assert_eq!(letter_to_col(s), i);
-            assert_eq!(col_to_letter(i), s);
-        }
+/// Everything `xaddr` needs to resolve an address against this table.
+///
+/// `name_to_col` is left to the trait's default, which is the same exact, case-sensitive
+/// position match the inherent method does.
+impl xaddr::Grid for Table {
+    fn nrows(&self) -> usize {
+        Table::nrows(self)
     }
 
-    #[test]
-    fn lowercase_letters_accepted() {
-        assert_eq!(letter_to_col("c"), letter_to_col("C"));
+    fn ncols(&self) -> usize {
+        Table::ncols(self)
+    }
+
+    fn header(&self) -> Option<&[String]> {
+        self.header.as_deref()
     }
 }

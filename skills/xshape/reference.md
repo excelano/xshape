@@ -26,18 +26,26 @@ draws an encoding warning with an `iconv` hint (via encsniff).
 
 ## Column addressing
 
-xshape's verbs are column-oriented and vendor the column half of xled's address dialect.
+xshape's verbs are column-oriented. The grammar is the `xaddr` crate, which xled resolves
+through as well, so an address means the same thing in both tools.
 
 | Form | Resolves to | Notes |
 |---|---|---|
 | `C`, `AF` | one column by letter | bijective base-26: A=0, Z=25, AA=26; letters case-insensitive |
-| `[first name]` | one column by header name | exact, **case-sensitive**; `]]` = a literal `]` |
+| `[first name]` | one column by header name | exact, **case-sensitive**; `]]` = a literal `]`, and a bare `[` inside a name is ordinary |
 | `E:K`, `[a]:[d]` | an inclusive column range | either direction; expanded left→right |
+| `B:`, `:C` | an open-ended range | runs to the first or last column of this table |
 | `[id],D:E` | a comma list of atoms and ranges | **order preserved, duplicates kept** |
 
 Single-column flags (`--col`, `--names-from`, `--values-from`) take exactly one atom and
 reject a range or list. Set flags (`--cols`) take the full grammar. A `[name]` against a
-file with no header errors and says so; a letter past the table's width errors.
+file with no header errors and says so.
+
+Two limits are xshape's own rather than the grammar's. An address naming a row (`3`, `$`) or
+a single cell (`B2`) is rejected: those are xled's half of the dialect, and a reshape verb
+takes columns. And a column past the table's width **errors** rather than clamping to the
+last one — xled clamps, because reading less than you asked for is recoverable and a reshape
+that quietly did less is not.
 
 ## The verbs
 
