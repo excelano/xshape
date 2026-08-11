@@ -14,7 +14,10 @@ fn unpivot_fixture_round_trips_values() {
 
     // 2 data rows × 3 gathered columns = 6 long rows.
     assert_eq!(long.nrows(), 6);
-    assert_eq!(long.header.as_ref().unwrap(), &["contract_id", "vendor", "fiscal_year", "spend"]);
+    assert_eq!(
+        long.header.as_ref().unwrap(),
+        &["contract_id", "vendor", "fiscal_year", "spend"]
+    );
 
     let out = io::serialize(&long).unwrap();
 

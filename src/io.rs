@@ -33,7 +33,11 @@ pub fn read_str(data: &str, delim: u8, has_header: bool) -> Result<Table> {
         (None, records)
     };
 
-    Ok(Table { header, rows, delim })
+    Ok(Table {
+        header,
+        rows,
+        delim,
+    })
 }
 
 /// Read a file, choosing the delimiter from its extension unless one is given.
@@ -54,7 +58,9 @@ pub fn read_file(path: &str, delim: Option<u8>, has_header: bool) -> Result<Tabl
 /// warranted. Sniff failures are silently ignored — the downstream read surfaces a
 /// clearer error if the file is really unreadable.
 fn sniff_and_warn(path: &str) {
-    let Ok(s) = encsniff::sniff_file(path) else { return };
+    let Ok(s) = encsniff::sniff_file(path) else {
+        return;
+    };
     if s.action != encsniff::Action::Warn {
         return;
     }

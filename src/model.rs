@@ -44,12 +44,17 @@ impl Table {
 
     /// The header label for a column, if a header overlay exists.
     pub fn col_name(&self, c: usize) -> Option<&str> {
-        self.header.as_ref().and_then(|h| h.get(c)).map(|s| s.as_str())
+        self.header
+            .as_ref()
+            .and_then(|h| h.get(c))
+            .map(|s| s.as_str())
     }
 
     /// The label to show for a column: its header name, or its letter when there is no header.
     pub fn col_label(&self, c: usize) -> String {
-        self.col_name(c).map(str::to_string).unwrap_or_else(|| col_to_letter(c))
+        self.col_name(c)
+            .map(str::to_string)
+            .unwrap_or_else(|| col_to_letter(c))
     }
 
     /// Resolve a bracketed column name to its index. Case-sensitive, exact (`[userId]` ≠ `userid`).

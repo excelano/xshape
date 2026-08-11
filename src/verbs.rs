@@ -63,14 +63,21 @@ pub fn unpivot(table: &Table, cols_spec: &str, key_name: &str, value_name: &str)
     let mut rows = Vec::with_capacity(table.nrows() * gather.len().max(1));
     for r in 0..table.nrows() {
         for &g in &gather {
-            let mut row: Vec<String> = id_cols.iter().map(|&c| table.cell(r, c).to_string()).collect();
+            let mut row: Vec<String> = id_cols
+                .iter()
+                .map(|&c| table.cell(r, c).to_string())
+                .collect();
             row.push(table.col_label(g));
             row.push(table.cell(r, g).to_string());
             rows.push(row);
         }
     }
 
-    Ok(Table { header: Some(header), rows, delim: table.delim })
+    Ok(Table {
+        header: Some(header),
+        rows,
+        delim: table.delim,
+    })
 }
 
 /// A delimited cell → multiple rows. Each input row's `col` value is split on the literal `sep`;
@@ -93,7 +100,11 @@ pub fn explode(table: &Table, col_spec: &str, sep: &str) -> Result<Table> {
             rows.push(row);
         }
     }
-    Ok(Table { header: table.header.clone(), rows, delim: table.delim })
+    Ok(Table {
+        header: table.header.clone(),
+        rows,
+        delim: table.delim,
+    })
 }
 
 /// One column → several. Each `col` value is split on the literal `sep`; the pieces become new
@@ -112,7 +123,11 @@ pub fn split(table: &Table, col_spec: &str, sep: &str, into: Option<&[String]>) 
 
     let width = match into {
         Some(names) => {
-            if let Some((r, got)) = pieces.iter().enumerate().find(|(_, p)| p.len() > names.len()) {
+            if let Some((r, got)) = pieces
+                .iter()
+                .enumerate()
+                .find(|(_, p)| p.len() > names.len())
+            {
                 return Err(XshapeError::Input(format!(
                     "row {} splits into {} pieces but --into names only {} columns — add names, \
                      or the extra pieces would be dropped (xshape never discards a value)",
@@ -134,14 +149,21 @@ pub fn split(table: &Table, col_spec: &str, sep: &str, into: Option<&[String]>) 
         }
     };
 
-    let header = table.header.as_ref().map(|_| splice(&labels(table), col, &new_names));
+    let header = table
+        .header
+        .as_ref()
+        .map(|_| splice(&labels(table), col, &new_names));
     let mut rows = Vec::with_capacity(table.nrows());
     for (r, row_pieces) in pieces.iter().enumerate() {
         let mut cells = row_pieces.clone();
         cells.resize(width, String::new()); // pad short rows; never truncate (checked above)
         rows.push(splice(&dense_row(table, r), col, &cells));
     }
-    Ok(Table { header, rows, delim: table.delim })
+    Ok(Table {
+        header,
+        rows,
+        delim: table.delim,
+    })
 }
 
 /// long → wide. The distinct values of `names_from` become new column headers; `values_from`
@@ -157,7 +179,9 @@ pub fn pivot(table: &Table, names_from: &str, values_from: &str) -> Result<Table
         ));
     }
 
-    let id_cols: Vec<usize> = (0..table.ncols()).filter(|&c| c != name_col && c != val_col).collect();
+    let id_cols: Vec<usize> = (0..table.ncols())
+        .filter(|&c| c != name_col && c != val_col)
+        .collect();
 
     use std::collections::HashMap;
     let mut names: Vec<String> = Vec::new(); // spread headers, first-seen order
@@ -172,14 +196,24 @@ pub fn pivot(table: &Table, names_from: &str, values_from: &str) -> Result<Table
             names.push(name.clone());
             names.len() - 1
         });
-        let ids: Vec<String> = id_cols.iter().map(|&c| table.cell(r, c).to_string()).collect();
+        let ids: Vec<String> = id_cols
+            .iter()
+            .map(|&c| table.cell(r, c).to_string())
+            .collect();
         let ii = *id_idx.entry(ids.clone()).or_insert_with(|| {
             id_tuples.push(ids.clone());
             id_tuples.len() - 1
         });
-        if grid.insert((ii, ni), table.cell(r, val_col).to_string()).is_some() {
+        if grid
+            .insert((ii, ni), table.cell(r, val_col).to_string())
+            .is_some()
+        {
             let label = table.col_label(name_col);
-            let where_ = if ids.is_empty() { String::new() } else { format!(" for row [{}]", ids.join(", ")) };
+            let where_ = if ids.is_empty() {
+                String::new()
+            } else {
+                format!(" for row [{}]", ids.join(", "))
+            };
             return Err(XshapeError::Collision(format!(
                 "two source rows map to the same cell — {label}={name:?}{where_} appears twice. \
                  xshape does not aggregate; dedup or aggregate upstream with xql (GROUP BY) or DuckDB"
@@ -198,7 +232,11 @@ pub fn pivot(table: &Table, names_from: &str, values_from: &str) -> Result<Table
         }
         rows.push(row);
     }
-    Ok(Table { header: Some(header), rows, delim: table.delim })
+    Ok(Table {
+        header: Some(header),
+        rows,
+        delim: table.delim,
+    })
 }
 
 /// Several columns → one, joined by the literal `sep` in spec order. The merged column takes the
@@ -207,13 +245,19 @@ pub fn pivot(table: &Table, names_from: &str, values_from: &str) -> Result<Table
 pub fn merge(table: &Table, cols_spec: &str, sep: &str, into: &str) -> Result<Table> {
     let cols = addr::cols(cols_spec, table)?;
     if cols.len() < 2 {
-        return Err(XshapeError::Input("merge needs at least two columns".into()));
+        return Err(XshapeError::Input(
+            "merge needs at least two columns".into(),
+        ));
     }
     let remove: std::collections::HashSet<usize> = cols.iter().copied().collect();
     let anchor = *cols.iter().min().unwrap();
 
     let build = |cells: &[String]| -> Vec<String> {
-        let joined = cols.iter().map(|&c| cells[c].clone()).collect::<Vec<_>>().join(sep);
+        let joined = cols
+            .iter()
+            .map(|&c| cells[c].clone())
+            .collect::<Vec<_>>()
+            .join(sep);
         let mut out = Vec::with_capacity(cells.len() - remove.len() + 1);
         for (c, cell) in cells.iter().enumerate() {
             if c == anchor {
@@ -242,8 +286,14 @@ pub fn merge(table: &Table, cols_spec: &str, sep: &str, into: &str) -> Result<Ta
             })
             .collect()
     });
-    let rows: Vec<Vec<String>> = (0..table.nrows()).map(|r| build(&dense_row(table, r))).collect();
-    Ok(Table { header, rows, delim: table.delim })
+    let rows: Vec<Vec<String>> = (0..table.nrows())
+        .map(|r| build(&dense_row(table, r)))
+        .collect();
+    Ok(Table {
+        header,
+        rows,
+        delim: table.delim,
+    })
 }
 
 /// Swap the row and column axes wholesale. The grid — header row included, when present — is
@@ -277,13 +327,19 @@ pub fn transpose(table: &Table) -> Result<Table> {
     } else {
         (None, t)
     };
-    Ok(Table { header, rows, delim: table.delim })
+    Ok(Table {
+        header,
+        rows,
+        delim: table.delim,
+    })
 }
 
 /// `--sep` must be a non-empty literal; xshape never guesses a delimiter (DESIGN.md).
 fn require_sep(sep: &str) -> Result<()> {
     if sep.is_empty() {
-        Err(XshapeError::Input("--sep must be a non-empty separator (xshape never guesses one)".into()))
+        Err(XshapeError::Input(
+            "--sep must be a non-empty separator (xshape never guesses one)".into(),
+        ))
     } else {
         Ok(())
     }
@@ -330,16 +386,23 @@ mod tests {
     fn unpivot_preserves_values_exactly() {
         let mut t = wide();
         t.rows[0][1] = "007".into(); // leading zero must survive
-        // Gathering only B leaves A (contract) and C (fy2025) as id columns, so the header is
-        // [contract, fy2025, k, v] and the gathered value lands in the last column.
+                                     // Gathering only B leaves A (contract) and C (fy2025) as id columns, so the header is
+                                     // [contract, fy2025, k, v] and the gathered value lands in the last column.
         let out = unpivot(&t, "B", "k", "v").unwrap();
-        assert_eq!(out.header.as_ref().unwrap(), &["contract", "fy2025", "k", "v"]);
+        assert_eq!(
+            out.header.as_ref().unwrap(),
+            &["contract", "fy2025", "k", "v"]
+        );
         assert_eq!(out.rows[0], vec!["A-1", "200", "fy2024", "007"]);
     }
 
     #[test]
     fn unpivot_requires_header() {
-        let t = Table { header: None, rows: vec![vec!["x".into()]], delim: b',' };
+        let t = Table {
+            header: None,
+            rows: vec![vec!["x".into()]],
+            delim: b',',
+        };
         assert!(unpivot(&t, "A", "k", "v").is_err());
     }
 
@@ -391,14 +454,23 @@ mod tests {
     fn split_auto_width_pads_short_rows() {
         let out = split(&listy(), "[apps]", "; ", None).unwrap();
         // Widest row has 3 pieces → apps_1..apps_3; the original column is replaced in place.
-        assert_eq!(out.header.as_ref().unwrap(), &["contract", "apps_1", "apps_2", "apps_3"]);
+        assert_eq!(
+            out.header.as_ref().unwrap(),
+            &["contract", "apps_1", "apps_2", "apps_3"]
+        );
         assert_eq!(out.rows[0], vec!["C-1", "Splunk", "RSA", "Imperva"]);
         assert_eq!(out.rows[1], vec!["C-2", "Solo", "", ""]);
     }
 
     #[test]
     fn split_into_names_fixes_width() {
-        let out = split(&listy(), "[apps]", "; ", Some(&["a".into(), "b".into(), "c".into()])).unwrap();
+        let out = split(
+            &listy(),
+            "[apps]",
+            "; ",
+            Some(&["a".into(), "b".into(), "c".into()]),
+        )
+        .unwrap();
         assert_eq!(out.header.as_ref().unwrap(), &["contract", "a", "b", "c"]);
     }
 
@@ -426,7 +498,10 @@ mod tests {
     #[test]
     fn pivot_spreads_to_wide() {
         let out = pivot(&long(), "[fy]", "[spend]").unwrap();
-        assert_eq!(out.header.as_ref().unwrap(), &["contract", "fy2024", "fy2025"]);
+        assert_eq!(
+            out.header.as_ref().unwrap(),
+            &["contract", "fy2024", "fy2025"]
+        );
         assert_eq!(out.rows[0], vec!["A-1", "100", "200"]);
         // B-2 has no fy2025 row → that cell is empty, not invented.
         assert_eq!(out.rows[1], vec!["B-2", "0", ""]);
@@ -435,15 +510,24 @@ mod tests {
     #[test]
     fn pivot_errors_on_collision_not_aggregate() {
         let mut t = long();
-        t.rows.push(vec!["A-1".into(), "fy2024".into(), "999".into()]); // duplicate cell
+        t.rows
+            .push(vec!["A-1".into(), "fy2024".into(), "999".into()]); // duplicate cell
         let err = pivot(&t, "[fy]", "[spend]").unwrap_err();
         assert!(err.to_string().contains("does not aggregate"), "got: {err}");
     }
 
     #[test]
     fn pivot_is_unpivots_inverse() {
-        let round = pivot(&unpivot(&wide(), "[fy2024]:[fy2025]", "fy", "amount").unwrap(), "[fy]", "[amount]").unwrap();
-        assert_eq!(round.header.as_ref().unwrap(), &["contract", "fy2024", "fy2025"]);
+        let round = pivot(
+            &unpivot(&wide(), "[fy2024]:[fy2025]", "fy", "amount").unwrap(),
+            "[fy]",
+            "[amount]",
+        )
+        .unwrap();
+        assert_eq!(
+            round.header.as_ref().unwrap(),
+            &["contract", "fy2024", "fy2025"]
+        );
         assert_eq!(round.rows[0], vec!["A-1", "100", "200"]);
     }
 

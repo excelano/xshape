@@ -257,7 +257,10 @@ fn load(c: &Common) -> Result<(xshape::model::Table, Option<String>)> {
         None => {
             let mut data = String::new();
             io::stdin().read_to_string(&mut data)?;
-            Ok((xio::read_str(&data, delim.unwrap_or(b','), has_header)?, None))
+            Ok((
+                xio::read_str(&data, delim.unwrap_or(b','), has_header)?,
+                None,
+            ))
         }
     }
 }
