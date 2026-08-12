@@ -8,7 +8,7 @@ here that `xshape --help` doesn't list means the installed copy predates it.
 ## Invocation and flags
 
 ```sh
-xshape <verb> [options] [FILE]      # FILE omitted → read stdin
+xshape <verb> [options] [FILE]      # FILE omitted, or `-`, → read stdin
 ```
 
 Common flags, accepted by every verb:
@@ -21,8 +21,20 @@ Common flags, accepted by every verb:
 | `-h, --help` / `-V, --version` | standard |
 
 Output: the reshaped table to **stdout** (the preview), advisory notices to **stderr**.
-`-i` requires a FILE (not piped stdin). A UTF-8 BOM is stripped on read; non-UTF-8 input
-draws an encoding warning with an `iconv` hint (via encsniff).
+`-i` requires a real FILE, however stdin was spelled. A UTF-8 BOM is stripped on read;
+non-UTF-8 input draws an encoding warning with an `iconv` hint (via encsniff).
+
+Omitting FILE and writing `-` mean the same thing, so a caller that would rather be
+explicit can be. They differ in one place: a bare `xshape <verb>` at a terminal, with
+nothing piped in, is a usage error rather than a silent wait, while an explicit `-` blocks
+the way `cat -` does — it was asked for.
+
+## Exit codes
+
+`0` is success, including a reshape with nothing to do: no columns matched the address, one
+row to transpose. The emitted table is the answer, so read it rather than the exit status.
+`1` is bad input — an unreadable file, a malformed table, an address that does not resolve.
+`2` is a bad invocation — an unknown flag, a missing argument, contradictory options.
 
 ## Column addressing
 

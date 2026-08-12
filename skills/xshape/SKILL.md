@@ -56,6 +56,7 @@ DuckDB. xshape's own errors point you there by name.
 ```sh
 xshape <verb> [options] file.csv     # reshape; result to stdout (the preview)
 … | xshape <verb> [options]          # reshape piped stdin
+… | xshape <verb> [options] -        # the same, said out loud
 xshape <verb> -i [options] file.csv  # write the result back to the file (like sed -i)
 xshape <verb> -i.bak [options] f.csv # …keeping the original as f.csv.bak
 ```
@@ -63,7 +64,11 @@ xshape <verb> -i.bak [options] f.csv # …keeping the original as f.csv.bak
 The reshaped table goes to **stdout by default** — stdout *is* the preview, the whole new
 grid in view before you commit. `-i`/`--in-place[=.bak]` writes it back to the file. Data
 goes to stdout, advisory notices to stderr, so `xshape … file.csv > out.csv` is always
-safe. `-i` needs a file argument, not piped stdin.
+safe. `-i` needs a file argument, not stdin.
+
+Exit `0` is success even when the reshape had nothing to do — read the emitted table, not
+the status. `1` is bad input (unreadable file, malformed table, an address that does not
+resolve); `2` is a bad invocation (unknown flag, missing argument).
 
 Common flags (every verb): `-d/--delim <char>` (delimiter, `\t` for tab; defaults to `,`,
 or tab for `.tsv`), `--no-header` (treat row 1 as data), `-i/--in-place[=SUFFIX]` (commit

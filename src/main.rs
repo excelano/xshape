@@ -13,9 +13,18 @@ mod skill;
 
 use clap::{Args, Parser, Subcommand};
 use std::fs;
-use std::io::{self, Read, Write};
+use std::io::{self, IsTerminal, Read, Write};
 use std::process::exit;
 use xshape::{io as xio, verbs, Result, XshapeError};
+
+/// What each exit status means, so a caller can branch on the number instead of on the
+/// message. A reshape that has nothing to do — no columns matched, one row to transpose —
+/// still succeeds and still emits a table; the table is the answer.
+const EXIT_CODES: &str = "\
+Exit codes:
+  0  success
+  1  bad input \u{2014} unreadable file, malformed table, an address that does not resolve
+  2  bad invocation \u{2014} unknown flag, missing argument, contradictory options";
 
 #[derive(Parser)]
 #[command(
@@ -27,7 +36,8 @@ use xshape::{io as xio, verbs, Result, XshapeError};
                   querying the row set is xql's.",
     // The verb is optional only so `--install-skill` can stand alone; a bare
     // `xshape` still prints help rather than falling through to a None verb.
-    arg_required_else_help = true
+    arg_required_else_help = true,
+    after_help = EXIT_CODES
 )]
 struct Cli {
     #[command(subcommand)]
@@ -61,7 +71,7 @@ enum Verb {
 /// Input + output plumbing shared by every verb.
 #[derive(Args)]
 struct Common {
-    /// input file (CSV/TSV); omit to read stdin
+    /// input file (CSV/TSV); omit, or give `-`, to read stdin
     file: Option<String>,
     /// field delimiter, `\t` for tab (defaults to ',', or tab for a .tsv file)
     #[arg(short, long, value_name = "CHAR", value_parser = xio::parse_delim)]
@@ -249,12 +259,25 @@ fn parse_list(s: &str) -> Vec<String> {
 
 /// Load the input table from the file or piped stdin. Returns the table and the source path
 /// (`None` for stdin), which `emit` needs to honor `-i`.
+///
+/// Omitting the file and giving `-` mean the same thing; `-` is the spelling for a caller
+/// that would rather say what it means than rely on the omission. A bare `xshape VERB` at a
+/// terminal has no input coming, so it says so instead of sitting on a stdin nobody is
+/// writing to. An explicit `-` still blocks, the way `cat -` does: that was asked for.
 fn load(c: &Common) -> Result<(xshape::model::Table, Option<String>)> {
     let has_header = !c.no_header;
     let delim = c.delim;
-    match &c.file {
-        Some(path) => Ok((xio::read_file(path, delim, has_header)?, Some(path.clone()))),
+    let path = c.file.as_deref().filter(|p| *p != "-");
+    match path {
+        Some(path) => Ok((
+            xio::read_file(path, delim, has_header)?,
+            Some(path.to_string()),
+        )),
         None => {
+            if c.file.is_none() && io::stdin().is_terminal() {
+                eprintln!("xshape: no input — give a file, or pipe data in");
+                exit(2);
+            }
             let mut data = String::new();
             io::stdin().read_to_string(&mut data)?;
             Ok((
@@ -279,7 +302,7 @@ fn emit(out: &xshape::model::Table, c: &Common, source: Option<String>) -> Resul
             fs::write(&path, &text).map_err(|e| XshapeError::Io(e.to_string()))
         }
         (Some(_), None) => Err(XshapeError::Input(
-            "-i edits a file in place — it needs a file argument, not piped stdin".into(),
+            "-i edits a file in place — it needs a file argument, not stdin".into(),
         )),
         (None, _) => write_stdout(&text),
     }
