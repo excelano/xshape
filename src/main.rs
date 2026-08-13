@@ -66,6 +66,8 @@ enum Verb {
     Merge(MergeArgs),
     /// swap the row and column axes wholesale
     Transpose(TransposeArgs),
+    /// move columns to a new position, changing order and nothing else
+    Reorder(ReorderArgs),
 }
 
 /// Input + output plumbing shared by every verb.
@@ -164,6 +166,36 @@ struct TransposeArgs {
     common: Common,
 }
 
+#[derive(Args)]
+struct ReorderArgs {
+    /// columns to move, e.g. `[note]` or `D:F` or `[last],[first]`
+    #[arg(long)]
+    cols: String,
+    #[command(flatten)]
+    place: PlaceArgs,
+    #[command(flatten)]
+    common: Common,
+}
+
+/// Where the moved columns land. Exactly one is required — a reorder with no destination has
+/// nothing to do, and defaulting to an edge would move columns the caller never asked to move.
+#[derive(Args)]
+#[group(required = true, multiple = false)]
+struct PlaceArgs {
+    /// place them immediately before this column
+    #[arg(long, value_name = "COL")]
+    before: Option<String>,
+    /// place them immediately after this column
+    #[arg(long, value_name = "COL")]
+    after: Option<String>,
+    /// place them at the front of the table
+    #[arg(long)]
+    first: bool,
+    /// place them at the end of the table
+    #[arg(long)]
+    last: bool,
+}
+
 fn main() {
     let cli = Cli::parse_from(normalize_in_place(std::env::args()));
     // Terminal actions: they touch the user's skills directory and nothing
@@ -235,6 +267,21 @@ fn run(verb: Verb) -> Result<()> {
         Verb::Transpose(a) => {
             let (table, source) = load(&a.common)?;
             let out = verbs::transpose(&table)?;
+            emit(&out, &a.common, source)
+        }
+        Verb::Reorder(a) => {
+            // clap's group guarantees exactly one of the four is set.
+            let place = if let Some(spec) = a.place.before.as_deref() {
+                verbs::Place::Before(spec)
+            } else if let Some(spec) = a.place.after.as_deref() {
+                verbs::Place::After(spec)
+            } else if a.place.first {
+                verbs::Place::First
+            } else {
+                verbs::Place::Last
+            };
+            let (table, source) = load(&a.common)?;
+            let out = verbs::reorder(&table, &a.cols, place)?;
             emit(&out, &a.common, source)
         }
     }

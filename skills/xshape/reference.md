@@ -153,6 +153,33 @@ Transposes the grid as a matrix, header row included. The **old first column bec
 new header**, and the old header becomes the new first column. Ragged rows are padded to
 the table width first. Under `--no-header` the whole grid transposes with no header overlay.
 
+### `reorder` — move columns to a new position
+
+```sh
+xshape reorder --cols SPEC (--before COL | --after COL | --first | --last) [FILE]
+```
+
+Moves the addressed columns and changes nothing else. It is a permutation: same columns,
+same rows, same cells, only position differs. Exactly one destination is required — a
+reorder with no destination has nothing to do, and defaulting to an edge would move columns
+the caller never asked to move.
+
+Placement is **relative**, not a full target order. `--before`/`--after` name only what
+moves and the column it moves beside, so a column added upstream does not invalidate the
+command; a full order would have to be restated every time the schema changed, which is the
+condition a wide export is permanently in.
+
+The moved columns take **the order you wrote them in**, not their order in the table, so
+`--cols '[b],[a]' --first` is also how you swap two columns. Columns nobody named keep their
+relative order among themselves. A range moves as a block (`--cols 'B:D' --last`).
+
+Naming a column twice, or naming the anchor as something that also moves, is an error rather
+than a guess. Under `--no-header`, address by letter.
+
+To place a **new** column, create it with xled — which appends it — and then move it here.
+xshape does not create columns: a new column invents cells, and every cell in xshape's
+output has to be a cell that went in.
+
 ## Translation table — tidyr / pandas / Miller → xshape
 
 The subcommand names are plain English, but the semantics are tidyr's. If you know one of
@@ -166,6 +193,7 @@ these, this is the mapping:
 | cell → rows | `separate_rows(col, sep)` | `assign(...).explode(col)` | `nest --explode --values --across-records` | `explode --col … --sep …` |
 | many cols → one | `unite(into, cols, sep)` | `df[cols].agg(sep.join)` | `merge-fields` | `merge --cols … --sep … --into …` |
 | swap axes | `t()` (base R) | `df.T` | `mlr … reshape`/`--transpose` | `transpose` |
+| move columns | `relocate(col, .after = x)` | `df[[reordered]]` | `reorder -f … -e` | `reorder --cols … --after …` |
 
 Two differences from all of them: xshape **requires an explicit separator** (no default, no
 inference), and its **pivot refuses to aggregate** — where pandas silently takes a mean on

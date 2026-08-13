@@ -9,7 +9,7 @@ description: >-
   semicolons", "I need one row per value", "first and last name are in one column". It
   changes which axis holds which cells without changing a value: unpivot a wide export to
   long so it can be queried, pivot long back to a matrix, split a column by a delimiter,
-  explode a delimited cell into one row per value, merge columns, transpose. Better than
+  explode a delimited cell into one row per value, merge columns, reorder columns, transpose. Better than
   `mlr reshape`, tidyr, or pandas `melt`/`pivot`/`explode`: there the damage is not the
   reshape but the round trip, since `read_csv`/`to_csv` push every column through type
   inference and alter leading zeros, long IDs and currency the reshape never touched. Profile
@@ -96,6 +96,7 @@ the dialect and are rejected here, since a reshape verb takes columns.
 | `explode` | delimited cell → rows | `--col`, `--sep` | yes (× pieces) |
 | `merge` | several cols → one | `--cols`, `--sep`, `--into` | no |
 | `transpose` | swap axes | — | rows ↔ cols |
+| `reorder` | move cols | `--cols`, one of `--before`/`--after`/`--first`/`--last` | no |
 
 Three rules run through every verb, and they are what make xshape trustworthy:
 
@@ -135,6 +136,11 @@ xshape merge --cols '[last],[first]' --sep ', ' --into name people.csv
 # transpose a table that arrived sideways (old first column becomes the new header)
 xshape transpose metrics_by_month.csv
 
+# move a column next to a named neighbour — a permutation, nothing added or dropped
+xshape reorder --cols '[note]' --after '[p_prioritization]' plan.csv
+#   --before/--after name only what moves and what it moves beside, so a column added
+#   upstream does not invalidate the command the way a full target order would
+
 # commit in place, keeping a backup
 xshape unpivot --cols 'E:K' --into month,value -i.bak wide_report.csv
 ```
@@ -146,6 +152,10 @@ xshape only moves cells between axes. The moment the task needs something else:
 - **Editing a value** — strip the `$`, restore a leading zero, recase, trim, compute a
   derived column, fill merged-cell blanks → **xled** (`skills/xled`). (Reshape first with
   xshape, then clean the new column with xled — they compose.)
+- **Inserting a new column at a chosen position** — xled creates it (`[note] = ""`), which
+  appends it to the end; `xshape reorder` then moves it where it belongs. Creating a column
+  is xled's job because a new column invents cells, which is the one thing xshape's geometry
+  rule forbids; positioning it is xshape's.
 - **Answering a question about the rows** — filter, aggregate, group, join, dedupe, or an
   **aggregating pivot** (`pivot … SUM/COUNT`) → **SQL/DuckDB** (**xql**, `skills/xql`).
   xshape's pivot refuses the collision that aggregation would resolve.

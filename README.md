@@ -1,6 +1,6 @@
 # xshape — reshape for tabular data
 
-xshape changes the *geometry* of a single table — which axis holds which cells — and never changes, filters, or aggregates a value. Pivot a long key/value table into a matrix, unpivot a wide export back to long so it can be queried, split one column into several, explode a delimited cell into rows, merge several columns into one, or transpose a table that arrived sideways. Every cell that goes in comes out somewhere else, unchanged.
+xshape changes the *geometry* of a single table — which axis holds which cells — and never changes, filters, or aggregates a value. Pivot a long key/value table into a matrix, unpivot a wide export back to long so it can be queried, split one column into several, explode a delimited cell into rows, merge several columns into one, move a column to a different position, or transpose a table that arrived sideways. Every cell that goes in comes out somewhere else, unchanged.
 
 **Project page:** [https://excelano.com/xshape/](https://excelano.com/xshape/)
 
@@ -107,8 +107,9 @@ The reshaped table goes to **stdout by default** — the whole new grid in view 
 | `explode` | cell → rows | `xshape explode --col '[tags]' --sep '; ' f.csv` |
 | `merge` | several → one | `xshape merge --cols '[first],[last]' --sep ' ' --into name f.csv` |
 | `transpose` | swap axes | `xshape transpose f.csv` |
+| `reorder` | move columns | `xshape reorder --cols '[note]' --after '[id]' f.csv` |
 
-Columns are addressed like xled: a letter (`C`, `AF`), a bracketed header name (`[first name]`), and — for the set-taking verbs — ranges (`E:K`) and comma lists (`[id],D:E`). `split`/`explode`/`merge` require an explicit `--sep` and split on it literally (spaces included); nothing is ever trimmed, dropped, or aggregated. `pivot` errors on a collision and points you to xql.
+Columns are addressed like xled: a letter (`C`, `AF`), a bracketed header name (`[first name]`), and — for the set-taking verbs — ranges (`E:K`) and comma lists (`[id],D:E`). `reorder` places what it moves relative to another column (`--before`/`--after`) or at an edge (`--first`/`--last`), so adding a column upstream never invalidates the command; it is a permutation, so no column is added or dropped. To put a *new* column somewhere specific, create it with xled — which appends it — and then move it with `reorder`. `split`/`explode`/`merge` require an explicit `--sep` and split on it literally (spaces included); nothing is ever trimmed, dropped, or aggregated. `pivot` errors on a collision and points you to xql.
 
 ## Use it from Claude Code
 

@@ -81,3 +81,23 @@ fn help_states_the_exit_code_contract() {
     assert_eq!(code, 0);
     assert!(stdout.contains("Exit codes:"), "{stdout}");
 }
+
+/// The destination group is required and exclusive, and both failures are invocation errors
+/// (exit 2) rather than input errors — clap rejects them before a file is ever opened.
+#[test]
+fn reorder_demands_exactly_one_destination() {
+    let (_, stderr, code) = run_piped(&["reorder", "--cols", "[qty]"], TABLE);
+    assert_eq!(code, 2);
+    assert!(stderr.contains("required arguments"), "{stderr}");
+
+    let (_, stderr, code) = run_piped(&["reorder", "--cols", "[qty]", "--first", "--last"], TABLE);
+    assert_eq!(code, 2);
+    assert!(stderr.contains("cannot be used with"), "{stderr}");
+}
+
+#[test]
+fn reorder_moves_a_column_relative_to_another() {
+    let (stdout, _, code) = run_piped(&["reorder", "--cols", "[qty]", "--before", "[name]"], TABLE);
+    assert_eq!(code, 0);
+    assert_eq!(stdout, "id,qty,name\n007,5,Ann\n008,3,Bob\n");
+}

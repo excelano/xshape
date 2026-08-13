@@ -370,6 +370,125 @@ mod tests {
         }
     }
 
+    fn four() -> Table {
+        Table {
+            header: Some(vec![
+                "id".into(),
+                "name".into(),
+                "qty".into(),
+                "note".into(),
+            ]),
+            rows: vec![
+                vec!["007".into(), "Ann".into(), "5".into(), "x".into()],
+                vec!["008".into(), "Bob".into(), "3".into(), "y".into()],
+            ],
+            delim: b',',
+        }
+    }
+
+    fn head(t: &Table) -> Vec<String> {
+        t.header.clone().unwrap()
+    }
+
+    #[test]
+    fn reorder_places_relative_to_an_anchor() {
+        let t = four();
+        let before = reorder(&t, "[note]", Place::Before("[qty]")).unwrap();
+        assert_eq!(head(&before), ["id", "name", "note", "qty"]);
+        assert_eq!(before.rows[0], vec!["007", "Ann", "x", "5"]);
+
+        let after = reorder(&t, "[note]", Place::After("[id]")).unwrap();
+        assert_eq!(head(&after), ["id", "note", "name", "qty"]);
+        assert_eq!(after.rows[0], vec!["007", "x", "Ann", "5"]);
+    }
+
+    #[test]
+    fn reorder_places_at_the_edges() {
+        let t = four();
+        assert_eq!(
+            head(&reorder(&t, "[qty]", Place::First).unwrap()),
+            ["qty", "id", "name", "note"]
+        );
+        assert_eq!(
+            head(&reorder(&t, "[id]", Place::Last).unwrap()),
+            ["name", "qty", "note", "id"]
+        );
+    }
+
+    /// The moved columns take the order the caller wrote, not their order in the table, which
+    /// is what makes a swap expressible without a full target order.
+    #[test]
+    fn reorder_honors_the_order_given_not_the_table_order() {
+        let out = reorder(&four(), "[name],[id]", Place::First).unwrap();
+        assert_eq!(head(&out), ["name", "id", "qty", "note"]);
+        assert_eq!(out.rows[0], vec!["Ann", "007", "5", "x"]);
+    }
+
+    /// A range moves as a block, and the columns left behind keep their own relative order.
+    #[test]
+    fn reorder_moves_a_range_and_leaves_the_rest_in_order() {
+        let out = reorder(&four(), "B:C", Place::Last).unwrap();
+        assert_eq!(head(&out), ["id", "note", "name", "qty"]);
+    }
+
+    /// It is a permutation: same columns, same cells, only position moves. Leading zeros are
+    /// along for the ride, since a reorder that reinterprets a value would be xled's job done
+    /// badly.
+    #[test]
+    fn reorder_neither_adds_nor_drops_anything() {
+        let t = four();
+        let out = reorder(&t, "[note]", Place::First).unwrap();
+        assert_eq!(out.ncols(), t.ncols());
+        assert_eq!(out.nrows(), t.nrows());
+        let mut got = head(&out);
+        got.sort();
+        let mut want = head(&t);
+        want.sort();
+        assert_eq!(got, want);
+        assert!(out.rows[0].contains(&"007".to_string()));
+    }
+
+    #[test]
+    fn reorder_rejects_a_column_that_is_both_moving_and_the_anchor() {
+        let e = reorder(&four(), "[note]", Place::Before("[note]"))
+            .unwrap_err()
+            .to_string();
+        assert!(e.contains("both moving and the anchor"), "got: {e}");
+    }
+
+    #[test]
+    fn reorder_rejects_a_duplicate_in_cols() {
+        let e = reorder(&four(), "[note],[note]", Place::First)
+            .unwrap_err()
+            .to_string();
+        assert!(e.contains("more than once"), "got: {e}");
+    }
+
+    /// Letters address a headerless table, and the output stays headerless.
+    #[test]
+    fn reorder_works_without_a_header() {
+        let t = Table {
+            header: None,
+            rows: vec![vec!["1".into(), "a".into(), "10".into()]],
+            delim: b',',
+        };
+        let out = reorder(&t, "C", Place::First).unwrap();
+        assert!(out.header.is_none());
+        assert_eq!(out.rows[0], vec!["10", "1", "a"]);
+    }
+
+    /// A short row pads to the table's width rather than shifting the columns after it.
+    #[test]
+    fn reorder_pads_a_ragged_row() {
+        let t = Table {
+            header: Some(vec!["a".into(), "b".into(), "c".into()]),
+            rows: vec![vec!["1".into(), "2".into()]],
+            delim: b',',
+        };
+        let out = reorder(&t, "[c]", Place::First).unwrap();
+        assert_eq!(out.rows[0], vec!["", "1", "2"]);
+    }
+
     #[test]
     fn unpivot_gathers_to_long() {
         let out = unpivot(&wide(), "[fy2024]:[fy2025]", "fy", "amount").unwrap();
@@ -573,4 +692,90 @@ mod tests {
         assert_eq!(out.rows[0], vec!["jan", "5", "10"]);
         assert_eq!(out.rows[1], vec!["feb", "6", "20"]);
     }
+}
+
+/// Where the moved columns land. `Before`/`After` carry an anchor address the caller has not
+/// resolved yet, the same way every other verb takes a spec rather than an index.
+#[derive(Clone, Copy, Debug)]
+pub enum Place<'a> {
+    First,
+    Last,
+    Before(&'a str),
+    After(&'a str),
+}
+
+/// Move a set of columns to a new position, keeping every value and every column. This is the
+/// one verb that changes nothing but order — a permutation, so the output has the same columns,
+/// the same rows, and the same cells as the input.
+///
+/// Placement is relative (`--before`/`--after` an anchor column, or the two edges) rather than a
+/// full target order. A full order has to be restated in its entirety every time a column is
+/// added upstream, which is the condition a wide export is permanently in; naming only what
+/// moves and what it moves next to survives that (#4).
+///
+/// The moved columns take the order the caller wrote them in, not their order in the table, so
+/// `--cols '[c],[a]'` is also how you swap two columns. Columns nobody named keep their relative
+/// order among themselves.
+pub fn reorder(table: &Table, cols_spec: &str, place: Place<'_>) -> Result<Table> {
+    let moving = addr::cols(cols_spec, table)?;
+
+    // A column named twice would be moved twice, which has no meaning — and silently keeping the
+    // first mention would make `--cols '[a],[a]'` quietly differ from what it says.
+    let mut seen = std::collections::HashSet::new();
+    for &c in &moving {
+        if !seen.insert(c) {
+            return Err(XshapeError::Input(format!(
+                "column {} is named more than once in --cols",
+                table.col_label(c)
+            )));
+        }
+    }
+
+    // Everything not moving, in the order it already has.
+    let rest: Vec<usize> = (0..table.ncols()).filter(|c| !seen.contains(c)).collect();
+
+    let order: Vec<usize> = match place {
+        Place::First => moving.iter().chain(rest.iter()).copied().collect(),
+        Place::Last => rest.iter().chain(moving.iter()).copied().collect(),
+        Place::Before(spec) | Place::After(spec) => {
+            let anchor = addr::one_col(spec, table)?;
+            // Moving a column relative to itself has no answer, and picking one would be a guess.
+            if seen.contains(&anchor) {
+                return Err(XshapeError::Input(format!(
+                    "column {} is both moving and the anchor it moves next to",
+                    table.col_label(anchor)
+                )));
+            }
+            let at = rest
+                .iter()
+                .position(|&c| c == anchor)
+                .expect("anchor is not in the moving set, so it is in the rest");
+            let cut = match place {
+                Place::Before(_) => at,
+                _ => at + 1,
+            };
+            let mut order = Vec::with_capacity(table.ncols());
+            order.extend_from_slice(&rest[..cut]);
+            order.extend_from_slice(&moving);
+            order.extend_from_slice(&rest[cut..]);
+            order
+        }
+    };
+
+    let header = table
+        .header
+        .as_ref()
+        .map(|_| order.iter().map(|&c| table.col_label(c)).collect());
+    let rows = (0..table.nrows())
+        .map(|r| {
+            let cells = dense_row(table, r);
+            order.iter().map(|&c| cells[c].clone()).collect()
+        })
+        .collect();
+
+    Ok(Table {
+        header,
+        rows,
+        delim: table.delim,
+    })
 }
