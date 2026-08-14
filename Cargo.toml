@@ -1,7 +1,7 @@
 [package]
 name = "xshape"
 homepage = "https://excelano.com/xshape/"
-version = "0.5.0"
+version = "0.5.1"
 edition = "2021"
 description = "reshape tabular data — pivot, unpivot, split, merge, explode, transpose — without touching a value"
 license = "MIT"
