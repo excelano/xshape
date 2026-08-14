@@ -18,7 +18,7 @@ path = "src/main.rs"
 [dependencies]
 csv = "1"
 clap = { version = "4", features = ["derive"] }
-encsniff = "0.1.0"
+encsniff = "0.2.0"
 xaddr = "0.2"
 
 [package.metadata.dist]
