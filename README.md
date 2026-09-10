@@ -8,9 +8,9 @@ xshape changes the *geometry* of a single table — which axis holds which cells
 $ xshape unpivot --cols '[fy2020]:[fy2026]' --into fiscal_year,spend contracts.csv
 
 contract_id,vendor,fiscal_year,spend
-0000000000000000000002256,IDEMIA Identity & Security USA LLC,fy2020,0.00
-0000000000000000000002256,IDEMIA Identity & Security USA LLC,fy2021,0.00
-0000000000000000000002256,IDEMIA Identity & Security USA LLC,fy2022,0.00
+0000000000000000000002256,Contoso Identity Services LLC,fy2020,0.00
+0000000000000000000002256,Contoso Identity Services LLC,fy2021,0.00
+0000000000000000000002256,Contoso Identity Services LLC,fy2022,0.00
 ...
 
 $ xshape explode --col '[application_names]' --sep '; ' contracts.csv

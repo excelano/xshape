@@ -62,7 +62,7 @@ All six open questions are now closed. Where the corpus drove the call, the evid
 3. **Does `explode` belong? — SETTLED: yes, and it is core, not deferred.** The geometry test already passed it (no predicate, no new information, no aggregation); the corpus settles the priority. Your AI-analysis contract tables are full of `; `-delimited list cells (`vendor_aliases`, `related_contracts`, `application_names`, `integration_points`, `secondary_categories`) across ~20 files — one contract row wants to become one row per application. That pull is as strong as unpivot's, so `explode` ships in the core wave.
 4. **Preview model — SETTLED: inherit xled exactly.** Reshaped table goes to **stdout by default** (stdout *is* the preview — you see the whole new grid), and `-i` / `--in-place[=.bak]` commits back to the file, sed-style, matching xled's `main.rs`. No new concepts; the family stays one dialect.
 5. **REPL or runner-only? — SETTLED: runner-only for v1.** Reshape is a single decisive move, not the iterative cell-scrubbing that earns xled its REPL. Park the REPL until real usage asks for it.
-6. **Header handling & the separator — SETTLED, and the separator is a "never guess" call.** `split` names new columns `<name>_1`, `<name>_2`, overridable with `--into a,b,c` (tidyr's `into=`); `merge` takes a required `--into newname`. Crucially, `split`/`explode`/`merge` require an **explicit `--sep` with no inference**, because the corpus proves the two obvious defaults are unsafe: comma appears *inside* values (`Sirius Computer Solutions, LLC`) and slash appears in dates and free text (`06/05/23`, `S010222/S011253/S060120`). The dominant real delimiter is semicolon-space, but the tool never assumes it — same "never coerce a value you didn't ask it to" discipline as xled, one level up.
+6. **Header handling & the separator — SETTLED, and the separator is a "never guess" call.** `split` names new columns `<name>_1`, `<name>_2`, overridable with `--into a,b,c` (tidyr's `into=`); `merge` takes a required `--into newname`. Crucially, `split`/`explode`/`merge` require an **explicit `--sep` with no inference**, because the corpus proves the two obvious defaults are unsafe: comma appears *inside* values (`Northwind Computer Solutions, LLC`) and slash appears in dates and free text (`06/05/23`, `S000101/S000102/S000103`). The dominant real delimiter is semicolon-space, but the tool never assumes it — same "never coerce a value you didn't ask it to" discipline as xled, one level up.
 
 ## Corpus-ranked build order
 
@@ -72,7 +72,7 @@ pivot is the theoretical inverse and defines the collision boundary, but the cor
 |------|------|-----------------|
 | 1 | **unpivot** | `fy_spending_summary`, `fy_spending_detail`, `coverage_detail` — `contract_id` + `fy2020…fy2026` spread; the xql query-blocker |
 | 2 | **explode** | ~20 files with `; `-delimited list cells (the AI-analysis output shape) |
-| 3 | **split** | same list cells when the target is columns, not rows; feeds the others (merged `S010.../S011...` keys) |
+| 3 | **split** | same list cells when the target is columns, not rows; feeds the others (merged `S0001.../S0002...` keys) |
 | 4 | **pivot** | no corpus pull; built for the boundary rule and inverse symmetry |
 | 5 | **merge / transpose** | speculative — `full_contract_string` vs its parts hints merge round-trips exist; transpose is the rare "arrived sideways" case |
 
