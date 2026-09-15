@@ -1,6 +1,6 @@
 # xshape — design
 
-**Status:** In build, 2026-07-10. Design seed settled against the real corpus this session; decisions below are locked and Phase 1 scaffolding is underway. Name: `xshape` (x-family + reshape). crates.io name **`xshape` confirmed free** (404 on the sparse index for both `xshape` and `x-shape` — no `x-ray`-style workaround needed).
+**Name:** `xshape` (x-family + reshape), which is also the crate name — unlike `xray`, no `x-`prefixed workaround was needed.
 
 **One line:** header-aware structural reshaping for a single table — pivot, unpivot, transpose, split, merge, explode — the missing verb between xled (which edits values but never moves them) and xql (which queries the row set but never restructures the axes).
 
@@ -53,7 +53,7 @@ xshape must speak the **same addressing dialect as xled** — column letters (`C
 - Format conversion (`.xlsx`/JSON ↔ CSV) → office-convert / ditto. (This was a third candidate tool, deliberately *not* built — the conversion surface is already half-owned.)
 - Profiling / "what is this file" → **xray**.
 
-## Settled decisions — 2026-07-10, against the `~/xray-corpus` client tables
+## Settled decisions, against the `~/xray-corpus` client tables
 
 All six open questions are now closed. Where the corpus drove the call, the evidence is cited.
 
