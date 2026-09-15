@@ -84,4 +84,4 @@ xshape must speak xled's addressing dialect (column letters, `[bracketed names]`
 
 ## First move
 
-Scaffold Phase 1 from xray's template (Cargo layout, clap-derive CLI shell, `-V`/`-h` standard, csv + encsniff + anstream, the `-i` commit model, and the `install.sh`/`uninstall.sh`/`RELEASING.md`/`SECURITY.md`/`dist-workspace.toml` release plumbing), then vendor xled's addressing, then implement verbs in the corpus-ranked order above.
+Scaffold Phase 1 from xray's template (Cargo layout, clap-derive CLI shell, `-V`/`-h` standard, csv + encsniff + anstream, the `-i` commit model, and the `install.sh`/`uninstall.sh`/`SECURITY.md`/`dist-workspace.toml` release plumbing), then vendor xled's addressing, then implement verbs in the corpus-ranked order above.
