@@ -111,4 +111,4 @@ The skill is compiled into the binary, so this works the same however you instal
 
 ## License
 
-MIT. Authored by David M. Anderson, with AI assistance.
+MIT.
