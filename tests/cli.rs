@@ -30,7 +30,12 @@ fn run_piped(args: &[&str], input: &str) -> (String, String, i32) {
         .spawn()
         .expect("failed to run xshape");
     // A command that fails argument validation exits without reading stdin.
-    if let Err(e) = child.stdin.take().expect("no stdin").write_all(input.as_bytes()) {
+    if let Err(e) = child
+        .stdin
+        .take()
+        .expect("no stdin")
+        .write_all(input.as_bytes())
+    {
         if e.kind() != std::io::ErrorKind::BrokenPipe {
             panic!("failed to write to xshape's stdin: {e}");
         }
@@ -103,4 +108,62 @@ fn reorder_moves_a_column_relative_to_another() {
     let (stdout, _, code) = run_piped(&["reorder", "--cols", "[qty]", "--before", "[name]"], TABLE);
     assert_eq!(code, 0);
     assert_eq!(stdout, "id,qty,name\n007,5,Ann\n008,3,Bob\n");
+}
+
+const TSV: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/fixtures/tags.tsv");
+
+#[test]
+fn a_tsv_file_is_read_and_written_with_tabs() {
+    let (stdout, stderr, code) = run(&["explode", "--col", "[tags]", "--sep", ";", TSV]);
+    assert_eq!(code, 0, "{stderr}");
+    assert_eq!(
+        stdout,
+        "id\tname\ttags\n007\tAnn\ta\n007\tAnn\tb\n008\tBob\t\n"
+    );
+}
+
+/// Piped input has no extension to detect a tab from, so it takes `-d '\t'`.
+#[test]
+fn piped_tsv_needs_the_tab_delimiter_named() {
+    let tsv = std::fs::read_to_string(TSV).unwrap();
+    let (_, stderr, code) = run_piped(&["explode", "--col", "[tags]", "--sep", ";"], &tsv);
+    assert_eq!(code, 1, "{stderr}");
+
+    let (stdout, _, code) = run_piped(
+        &["explode", "-d", "\\t", "--col", "[tags]", "--sep", ";"],
+        &tsv,
+    );
+    assert_eq!(code, 0);
+    assert!(
+        stdout.starts_with("id\tname\ttags\n007\tAnn\ta\n"),
+        "{stdout}"
+    );
+}
+
+#[test]
+fn no_header_addresses_by_letter_and_emits_no_header() {
+    let input = "007,Ann,a;b\n008,Bob,c\n";
+    let (stdout, _, code) = run_piped(
+        &["explode", "--no-header", "--col", "C", "--sep", ";"],
+        input,
+    );
+    assert_eq!(code, 0);
+    assert_eq!(stdout, "007,Ann,a\n007,Ann,b\n008,Bob,c\n");
+
+    let (_, stderr, code) = run_piped(
+        &["explode", "--no-header", "--col", "[tags]", "--sep", ";"],
+        input,
+    );
+    assert_eq!(code, 1);
+    assert!(stderr.contains("needs a header row"), "{stderr}");
+}
+
+#[test]
+fn unpivot_without_a_header_is_refused() {
+    let (_, stderr, code) = run_piped(
+        &["unpivot", "--no-header", "--cols", "B:C", "--into", "k,v"],
+        "007,Ann,a\n",
+    );
+    assert_eq!(code, 1);
+    assert!(stderr.contains("unpivot needs a header row"), "{stderr}");
 }
