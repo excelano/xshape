@@ -127,7 +127,8 @@ fn a_tsv_file_is_read_and_written_with_tabs() {
 fn piped_tsv_needs_the_tab_delimiter_named() {
     let tsv = std::fs::read_to_string(TSV).unwrap();
     let (_, stderr, code) = run_piped(&["explode", "--col", "[tags]", "--sep", ";"], &tsv);
-    assert_eq!(code, 1, "{stderr}");
+    assert_eq!(code, 1);
+    assert!(stderr.contains("pass -d '\\t'"), "{stderr}");
 
     let (stdout, _, code) = run_piped(
         &["explode", "-d", "\\t", "--col", "[tags]", "--sep", ";"],

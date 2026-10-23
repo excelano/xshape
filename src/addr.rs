@@ -12,7 +12,7 @@
 //! edge of the table would silently do less than it was asked, which for a destructive verb
 //! is worse than stopping. (xled clamps instead, deliberately — see `xaddr::Bounds`.)
 
-use crate::errors::Result;
+use crate::errors::{Result, XshapeError};
 use crate::model::Table;
 use xaddr::Bounds;
 
@@ -21,8 +21,21 @@ use xaddr::Bounds;
 /// Order is preserved and duplicates are kept — the caller decides whether repetition is
 /// meaningful (it is for `merge`, an error for `unpivot`). Names require a header; letters do
 /// not. Every returned index is inside the table, so callers can use them directly.
+///
+/// A file read with the wrong delimiter arrives as one wide column, so a failed lookup against a
+/// one-column header that contains a tab says to pass `-d '\t'`.
 pub fn cols(spec: &str, table: &Table) -> Result<Vec<usize>> {
-    Ok(xaddr::parse(spec)?.columns(table, Bounds::Strict)?)
+    xaddr::parse(spec)?
+        .columns(table, Bounds::Strict)
+        .map_err(|e| match table.header.as_deref() {
+            Some([only]) if table.delim != b'\t' && only.contains('\t') => {
+                XshapeError::Address(format!(
+                    "{} (the header is one column containing tabs: pass -d '\\t')",
+                    e.message
+                ))
+            }
+            _ => e.into(),
+        })
 }
 
 /// Resolve exactly one column from a spec, rejecting lists and ranges. For verbs that name a
@@ -30,7 +43,7 @@ pub fn cols(spec: &str, table: &Table) -> Result<Vec<usize>> {
 pub fn one_col(spec: &str, table: &Table) -> Result<usize> {
     let cs = cols(spec, table)?;
     if cs.len() != 1 {
-        return Err(crate::errors::XshapeError::Address(format!(
+        return Err(XshapeError::Address(format!(
             "expected a single column, got {} from {spec:?}",
             cs.len()
         )));
