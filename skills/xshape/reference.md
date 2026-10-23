@@ -51,7 +51,8 @@ through as well, so an address means the same thing in both tools.
 
 Single-column flags (`--col`, `--names-from`, `--values-from`) take exactly one atom and
 reject a range or list. Set flags (`--cols`) take the full grammar. A `[name]` against a
-file with no header errors and says so.
+file with no header errors and says so. A header that is a number must be bracketed:
+`2023` alone addresses a row and is rejected, so write `[2023]:[2025]`, not `2023:2025`.
 
 Two limits are xshape's own rather than the grammar's. An address naming a row (`3`, `$`) or
 a single cell (`B2`) is rejected: those are xled's half of the dialect, and a reshape verb
@@ -90,7 +91,7 @@ appear in **first-seen order**. A combination that never occurs is left **empty*
 invented.
 
 - **Never aggregates.** If two source rows share an identifier tuple *and* a name — they
-  would land in one cell — pivot **errors** (`collision:`) and names xql/DuckDB. There is
+  would land in one cell — pivot **errors** (`collision:`) and names xql. There is
   no `--on-collision` escape hatch: picking `first`/`last` would drop a cell, and summing
   is a query. Dedupe or aggregate upstream, then pivot the clean result.
 - `--names-from` and `--values-from` must differ.
@@ -209,12 +210,13 @@ duplicate index/column pairs, xshape errors.
    dates, so there is no safe default to guess.
 3. **No silent drop or combine.** `pivot` errors on a collision instead of aggregating;
    `split` errors rather than discard an overflow piece. Both errors mean the same thing:
-   the next step is a query, and it belongs to xql/DuckDB.
+   the next step is a query, and it belongs to xql.
 
 ## What xshape does not do
 
-Filter rows by predicate, aggregate, group, join, dedupe, sort → **xql** / DuckDB. Edit
-cell values (currency, case, padding, computed columns, blank-fill) → **xled**. Profile an
-unfamiliar file → **xray**. Convert formats (`.xlsx`/JSON ↔ CSV) → office-convert / ditto.
-An aggregating pivot (`pivot … SUM`) is a query, not a reshape — xshape errors on the
+Filter rows by predicate, aggregate, group, dedupe, sort → **xql**. Join across files →
+whichever SQL engine is installed (`duckdb`, `sqlite3`, `csvsql`). Edit cell values
+(currency, case, padding, computed columns, blank-fill) → **xled**. Profile an unfamiliar
+file → **xray**. Convert formats (`.xlsx`/JSON ↔ CSV) → office-convert / ditto. An
+aggregating pivot (`pivot … SUM`) is a query, not a reshape — xshape errors on the
 collision that would require it.

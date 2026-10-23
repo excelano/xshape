@@ -7,6 +7,9 @@
 //! trimming would change a value — that is xled's job. And nothing is ever combined or dropped by
 //! the tool's own choice: `pivot` errors on a collision rather than aggregate, and `split` errors
 //! rather than discard a piece that overflows a fixed `--into`.
+//!
+//! Author: David M. Anderson
+//! Built with AI assistance (Claude, Anthropic)
 
 use crate::addr;
 use crate::errors::{Result, XshapeError};
@@ -169,7 +172,7 @@ pub fn split(table: &Table, col_spec: &str, sep: &str, into: Option<&[String]>) 
 /// long → wide. The distinct values of `names_from` become new column headers; `values_from`
 /// fills the grid; every other column identifies a row. xshape's pivot **never aggregates**: if
 /// two source rows share an identifier tuple and a name — they would land in one cell — it errors
-/// and names xql/DuckDB, because resolving that collision is a query, not a reshape (DESIGN.md).
+/// and names xql, because resolving that collision is a query, not a reshape (DESIGN.md).
 pub fn pivot(table: &Table, names_from: &str, values_from: &str) -> Result<Table> {
     let name_col = addr::one_col(names_from, table)?;
     let val_col = addr::one_col(values_from, table)?;
@@ -216,7 +219,7 @@ pub fn pivot(table: &Table, names_from: &str, values_from: &str) -> Result<Table
             };
             return Err(XshapeError::Collision(format!(
                 "two source rows map to the same cell — {label}={name:?}{where_} appears twice. \
-                 xshape does not aggregate; dedup or aggregate upstream with xql (GROUP BY) or DuckDB"
+                 xshape does not aggregate; dedup or aggregate upstream with xql (GROUP BY)"
             )));
         }
     }

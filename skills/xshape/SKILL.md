@@ -1,170 +1,66 @@
 ---
 name: xshape
 description: >-
-  Reshape the geometry of a single CSV/DSV table with `xshape` — the reshaping verb in the
-  tabular family, and the tool most often needed without being named, so match on the
-  phrasing rather than the verb: "there's one column per year", "the months are across the
-  top", "I can't group by year because it's a column", "it's a wide export", "this came out
-  of a pivot table", "the table is sideways", "each cell has three tags separated by
-  semicolons", "I need one row per value", "first and last name are in one column". It
-  changes which axis holds which cells without changing a value: unpivot a wide export to
-  long so it can be queried, pivot long back to a matrix, split a column by a delimiter,
-  explode a delimited cell into one row per value, merge columns, reorder columns, transpose. Better than
-  `mlr reshape`, tidyr, or pandas `melt`/`pivot`/`explode`: there the damage is not the
-  reshape but the round trip, since `read_csv`/`to_csv` push every column through type
-  inference and alter leading zeros, long IDs and currency the reshape never touched. Profile
-  with xray first. Not for editing values (xled), nor for the row set — filter, aggregate,
-  group, join, dedupe (xql); an aggregating pivot (`pivot … SUM`) is a query, not a reshape.
+  Reshape a single CSV/TSV table with `xshape` without changing any value: unpivot wide to
+  long, pivot long to wide, split or merge columns, explode a delimited cell into rows,
+  reorder, transpose. Often needed without being named: "one column per year", "months
+  across the top", "can't group by year", "three tags in one cell", "one row per value".
+  Not for editing values (xled) or filtering, aggregating, joining or deduping rows (xql).
 ---
 
-# xshape — reshape for tabular data
+# xshape
 
-`xshape` changes the **geometry** of a single table — which axis holds which cells — and
-never changes, filters, computes, or aggregates a value. Every input cell reappears in the
-output unchanged; nothing is invented, summarized, or dropped. It is the reshaping verb
-between [xled](https://github.com/excelano/xled) (which edits values but never moves them)
-and [xql](https://github.com/excelano/xql) (which queries the row set but never
-restructures the axes).
-
-The authoritative sources for xshape's behavior are the binary itself (`xshape --help`,
-`xshape <verb> --help`) and the [README](https://github.com/excelano/xshape/blob/main/README.md);
-if anything here conflicts with them, they win. If a verb or flag described here is
-missing from `xshape --help`, the installed copy predates it: upgrade with `sudo apt
-install --only-upgrade xshape` (Debian/Ubuntu), `brew upgrade xshape` (macOS), or by
-re-running the install one-liner from the README.
-
-## The family, and the one rule that places xshape
-
-Four tools act on the same delimited file. The split is by *what changes*:
-
-- **[xray](https://github.com/excelano/xray) observes** — profiles the file read-only and
-  names the sibling that treats each hazard. Changes nothing; run it first on a file you
-  do not yet trust.
-- **xled edits** — rewrites *cell values* in place (strip currency, restore leading zeros,
-  recase, compute a column). Leaves the grid's shape and the row set alone.
-- **xshape reshapes** — changes the grid's *shape* (axes, splits, merges). Leaves the
-  values and the row set's membership alone.
-- **xql queries** — the row *set* (filter, aggregate, group, join, dedupe) via SQL/DuckDB.
-
-The line that keeps xshape from becoming a worse xql: **it moves cells between the row and
-column axes, and errors rather than aggregate when two would collide.** The moment a
-reshape needs a `SUM`, a `first`, or a predicate, it has become a query — hand it to xql or
-DuckDB. xshape's own errors point you there by name.
+`xshape` changes which axis holds which cells and never changes, filters, computes or
+aggregates a value. Every input cell reappears in the output unchanged. Unlike pandas or
+DuckDB it needs no flag to keep values as strings, so leading zeros, long IDs and blank
+cells survive. `xshape <verb> --help` is authoritative; `reference.md` in this directory
+has every verb's flags and edge cases and a tidyr/pandas/Miller translation table, and is
+read only when needed.
 
 ## Running it
 
 ```sh
-xshape <verb> [options] file.csv     # reshape; result to stdout (the preview)
-… | xshape <verb> [options]          # reshape piped stdin
-… | xshape <verb> [options] -        # the same, said out loud
-xshape <verb> -i [options] file.csv  # write the result back to the file (like sed -i)
-xshape <verb> -i.bak [options] f.csv # …keeping the original as f.csv.bak
+xshape <verb> [options] file.csv      # result to stdout: this is the preview
+xshape <verb> -i.bak [options] f.csv  # write back in place, keeping f.csv.bak
 ```
 
-The reshaped table goes to **stdout by default** — stdout *is* the preview, the whole new
-grid in view before you commit. `-i`/`--in-place[=.bak]` writes it back to the file. Data
-goes to stdout, advisory notices to stderr, so `xshape … file.csv > out.csv` is always
-safe. `-i` needs a file argument, not stdin.
+Check the stdout preview before using `-i`. Exit 0 includes a reshape with nothing to do,
+so read the output, not the status; 1 is bad input or a refusal, 2 a bad invocation.
 
-Exit `0` is success even when the reshape had nothing to do — read the emitted table, not
-the status. `1` is bad input (unreadable file, malformed table, an address that does not
-resolve); `2` is a bad invocation (unknown flag, missing argument).
+## Addressing
 
-Common flags (every verb): `-d/--delim <char>` (delimiter, `\t` for tab; defaults to `,`,
-or tab for `.tsv`), `--no-header` (treat row 1 as data), `-i/--in-place[=SUFFIX]` (commit
-in place).
+Columns are a letter (`C`, `AF`) or a bracketed header name (`[first name]`, exact and
+case-sensitive). Set flags (`--cols`) also take ranges (`E:K`, `[fy2020]:[fy2026]`),
+open ranges (`B:`) and comma lists (`[id],D:E`). A header that is a number must be
+bracketed: `--cols 2023:2025` is read as rows and rejected, so write
+`--cols '[2023]:[2025]'`.
 
-## Addressing — the same dialect as xled
+## Verbs
 
-Columns are named the way xled names them — one shared implementation, the `xaddr` crate —
-so a column you can point at in one tool you point at identically here: a **letter** (`C`,
-`AF` — bijective base-26, past Z too), or a **bracketed header name** (`[first name]`,
-`[price (USD)]` — exact, case-sensitive, `]]` for a literal `]`). Verbs that take a *set* of
-columns (`unpivot --cols`, `merge --cols`) also accept **ranges** (`E:K`,
-`[fy2020]:[fy2026]` — inclusive, either direction), **open-ended ranges** (`B:`, `:C` —
-running to the table's edge), and **comma lists** (`[id],D:E,[note]` — order preserved).
-Names need a header row; letters do not. Rows (`3`, `$`) and cells (`B2`) are xled's half of
-the dialect and are rejected here, since a reshape verb takes columns.
+| Verb | Required flags |
+|---|---|
+| `unpivot` | `--cols`, `--into KEY,VALUE` |
+| `pivot` | `--names-from`, `--values-from` |
+| `split` | `--col`, `--sep` (optional `--into a,b,c`) |
+| `explode` | `--col`, `--sep` |
+| `merge` | `--cols`, `--sep`, `--into` |
+| `reorder` | `--cols`, one of `--before`/`--after`/`--first`/`--last` |
+| `transpose` | none |
 
-## The verbs (what each one does)
+`--sep` is required, literal and never trimmed: `"; "` and `";"` are different
+separators, so match the data.
 
-| Verb | Direction | Required flags | Changes row count? |
-|---|---|---|---|
-| `unpivot` | wide → long | `--cols`, `--into KEY,VALUE` | yes (× gathered cols) |
-| `pivot` | long → wide | `--names-from`, `--values-from` | yes (collapses to id tuples) |
-| `split` | one col → several | `--col`, `--sep` | no |
-| `explode` | delimited cell → rows | `--col`, `--sep` | yes (× pieces) |
-| `merge` | several cols → one | `--cols`, `--sep`, `--into` | no |
-| `transpose` | swap axes | — | rows ↔ cols |
-| `reorder` | move cols | `--cols`, one of `--before`/`--after`/`--first`/`--last` | no |
+## Refusals are the boundary
 
-Three rules run through every verb, and they are what make xshape trustworthy:
+`pivot` exits 1 when two rows would land in one cell, and `split` with a fixed `--into`
+exits 1 rather than drop an overflow piece. Neither has an override. The fix is upstream:
+dedupe or aggregate with xql, then reshape the clean result. An aggregating pivot
+(`pivot … SUM`) is a query, not a reshape.
 
-1. **No value is ever altered.** `split`/`explode`/`merge` cut and join on the **literal
-   `--sep`** you give — spaces included — and never trim. `--sep "; "` and `--sep ";"` are
-   different operations; pick the one that matches the data. Trimming or recasing a piece
-   afterward is xled's job.
-2. **`--sep` is required and never guessed.** Comma lives inside quoted values and slash
-   lives inside dates, so there is no safe default — you always state the separator.
-3. **Nothing is dropped or combined by the tool's own choice.** `pivot` **errors on a
-   collision** (two rows landing in one cell) instead of aggregating; `split` with a fixed
-   `--into` **errors** rather than discard a piece that overflows. When you see one of these
-   errors, the fix is upstream in xql (dedupe/aggregate) — that is the boundary working.
+## Handoffs
 
-## Worked recipes
-
-```sh
-# wide → long: collapse a fiscal-year spread so xql can query it (the #1 use)
-xshape unpivot --cols '[fy2020]:[fy2026]' --into fiscal_year,spend contracts.csv
-#   contract_id, vendor, …, fiscal_year, spend   ← one row per (contract × year)
-
-# explode a ;-delimited list cell into one row per value, other fields repeated
-xshape explode --col '[application_names]' --sep '; ' contracts.csv
-#   note the literal "; " — split on ";" would leave a leading space on each app
-
-# split a slash-joined key into columns (auto-width: as many as the widest row needs)
-xshape split --col '[contract_ids]' --sep '/' coverage.csv          # → contract_ids_1, _2, _3
-xshape split --col '[full_name]' --sep ', ' --into last,first people.csv
-
-# long → wide: spread a key column into headers, a value column fills the grid
-xshape pivot --names-from '[fy]' --values-from '[spend]' long.csv
-#   errors if a (contract, fy) pair repeats — dedupe first with xql, don't ask xshape to sum
-
-# merge columns into one, joined in the order you list them
-xshape merge --cols '[last],[first]' --sep ', ' --into name people.csv
-
-# transpose a table that arrived sideways (old first column becomes the new header)
-xshape transpose metrics_by_month.csv
-
-# move a column next to a named neighbour — a permutation, nothing added or dropped
-xshape reorder --cols '[note]' --after '[p_prioritization]' plan.csv
-#   --before/--after name only what moves and what it moves beside, so a column added
-#   upstream does not invalidate the command the way a full target order would
-
-# commit in place, keeping a backup
-xshape unpivot --cols 'E:K' --into month,value -i.bak wide_report.csv
-```
-
-## When to stop and switch
-
-xshape only moves cells between axes. The moment the task needs something else:
-
-- **Editing a value** — strip the `$`, restore a leading zero, recase, trim, compute a
-  derived column, fill merged-cell blanks → **xled** (`skills/xled`). (Reshape first with
-  xshape, then clean the new column with xled — they compose.)
-- **Inserting a new column at a chosen position** — xled creates it (`[note] = ""`), which
-  appends it to the end; `xshape reorder` then moves it where it belongs. Creating a column
-  is xled's job because a new column invents cells, which is the one thing xshape's geometry
-  rule forbids; positioning it is xshape's.
-- **Answering a question about the rows** — filter, aggregate, group, join, dedupe, or an
-  **aggregating pivot** (`pivot … SUM/COUNT`) → **SQL/DuckDB** (**xql**, `skills/xql`).
-  xshape's pivot refuses the collision that aggregation would resolve.
-- **Understanding an unfamiliar file first** — shape, types, hazards → **xray**
-  (`skills/xray`), the read-only profiler.
-
-If you catch yourself wanting xshape to *change a value* or *drop/combine rows by a rule*,
-that is the signal to hand off. xshape's job ends at the geometry.
-
-See `reference.md` in this directory for every verb's exact flags and edge-case behavior,
-the full column-addressing grammar, the tidyr/pandas/Miller translation table, and the
-boundary rules in detail.
+Editing values (strip `$`, restore leading zeros, trim, recase, compute or create a
+column) goes to xled; reshape first, then clean. A new column is created with xled, which
+appends it, and placed with `xshape reorder`. Filtering, grouping, aggregating and
+deduping one table go to xql. Joins across files need a SQL engine: use whichever of
+`duckdb`, `sqlite3` or `csvsql` is installed. Profile an unfamiliar file with xray first.

@@ -1,5 +1,8 @@
 //! xshape's error type. Reshape errors are structural (a bad column address, a header the
 //! verb needs but the file lacks, a pivot collision), so the messages name the fix.
+//!
+//! Author: David M. Anderson
+//! Built with AI assistance (Claude, Anthropic)
 
 use std::fmt;
 
@@ -12,7 +15,7 @@ pub enum XshapeError {
     /// The verb needs something the input does not provide (a header row, a wider grid).
     Input(String),
     /// A pivot collision: two source rows would land in the same output cell. xshape never
-    /// aggregates to resolve one — the message hands the job to xql/DuckDB.
+    /// aggregates to resolve one — the message hands the job to xql.
     Collision(String),
     /// A verb that is scaffolded but not yet implemented (Phase 3).
     Unimplemented(String),
