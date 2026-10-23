@@ -1,5 +1,8 @@
 //! CLI-level tests: run the built binary so the argument plumbing in main.rs —
 //! which the library tests cannot reach — is covered too.
+//!
+//! Author: David M. Anderson
+//! Built with AI assistance (Claude, Anthropic)
 
 use std::io::Write;
 use std::process::{Command, Stdio};
@@ -26,12 +29,12 @@ fn run_piped(args: &[&str], input: &str) -> (String, String, i32) {
         .stderr(Stdio::piped())
         .spawn()
         .expect("failed to run xshape");
-    child
-        .stdin
-        .take()
-        .expect("no stdin")
-        .write_all(input.as_bytes())
-        .expect("failed to write to xshape's stdin");
+    // A command that fails argument validation exits without reading stdin.
+    if let Err(e) = child.stdin.take().expect("no stdin").write_all(input.as_bytes()) {
+        if e.kind() != std::io::ErrorKind::BrokenPipe {
+            panic!("failed to write to xshape's stdin: {e}");
+        }
+    }
     let out = child.wait_with_output().expect("failed to wait for xshape");
     (
         String::from_utf8_lossy(&out.stdout).into_owned(),
