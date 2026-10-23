@@ -1,3 +1,6 @@
+// Author: David M. Anderson
+// Built with AI assistance (Claude, Anthropic)
+
 //! The xshape CLI.
 //!
 //! One verb per subcommand, each reshaping a single table:
@@ -32,7 +35,7 @@ Exit codes:
 #[derive(Parser)]
 #[command(
     name = "xshape",
-    version,
+    version = skill::version(),
     about = "reshape tabular data — pivot, unpivot, split, merge, explode, transpose",
     long_about = "Change the geometry of a single table — which axis holds which cells — without \
                   ever changing, filtering, or aggregating a value. Cell edits are xled's job; \
