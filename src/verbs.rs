@@ -176,7 +176,16 @@ pub fn split(table: &Table, col_spec: &str, sep: &str, into: Option<&[String]>) 
 /// fills the grid; every other column identifies a row. xshape's pivot **never aggregates**: if
 /// two source rows share an identifier tuple and a name — they would land in one cell — it errors
 /// and names xql, because resolving that collision is a query, not a reshape (DESIGN.md).
+/// Requires a header: the identifier columns keep their names in the output header, and under
+/// `--no-header` there are none to keep, so it errors rather than invent letter names.
 pub fn pivot(table: &Table, names_from: &str, values_from: &str) -> Result<Table> {
+    if table.header.is_none() {
+        return Err(XshapeError::Input(
+            "pivot needs a header row: the identifier columns keep their names in the output \
+             header (drop --no-header, or promote the header first with xled)"
+                .into(),
+        ));
+    }
     let name_col = addr::one_col(names_from, table)?;
     let val_col = addr::one_col(values_from, table)?;
     if name_col == val_col {
@@ -530,6 +539,20 @@ mod tests {
             delim: b',',
         };
         assert!(unpivot(&t, "A", "k", "v").is_err());
+    }
+
+    #[test]
+    fn pivot_requires_header() {
+        let t = Table {
+            header: None,
+            rows: vec![vec!["x".into(), "y".into(), "z".into()]],
+            delim: b',',
+        };
+        let err = pivot(&t, "B", "C").unwrap_err();
+        assert!(
+            err.to_string().contains("pivot needs a header row"),
+            "got: {err}"
+        );
     }
 
     #[test]

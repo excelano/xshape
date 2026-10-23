@@ -95,6 +95,8 @@ invented.
   no `--on-collision` escape hatch: picking `first`/`last` would drop a cell, and summing
   is a query. Dedupe or aggregate upstream, then pivot the clean result.
 - `--names-from` and `--values-from` must differ.
+- **Requires a header** — the identifier columns keep their names in the output header, so
+  under `--no-header` it errors rather than invent letter names.
 
 ### `split` — one column → several
 
