@@ -48,8 +48,8 @@ xshape must speak the **same addressing dialect as xled** — column letters (`C
 ## Non-goals — who gets each near-miss
 
 - Editing values inside cells (strip, recase, derive) → **xled**.
-- Filter, aggregate, group, dedup, join → **xql** (single-table) / **DuckDB** (relational).
-- Aggregating pivot (`pivot … SUM/COUNT`) → **DuckDB**. xshape's pivot errors on the collision that would require it.
+- Filter, aggregate, group, dedup, join → **xql** (single-table) / whichever SQL engine is installed (relational: `duckdb`, `sqlite3`, `csvsql`).
+- Aggregating pivot (`pivot … SUM/COUNT`) → **xql**. xshape's pivot errors on the collision that would require it.
 - Format conversion (`.xlsx`/JSON ↔ CSV) → office-convert / ditto. (This was a third candidate tool, deliberately *not* built — the conversion surface is already half-owned.)
 - Profiling / "what is this file" → **xray**.
 
