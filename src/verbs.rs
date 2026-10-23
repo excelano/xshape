@@ -1,6 +1,10 @@
-//! The reshape verbs. Each takes a `&Table` and returns a new `Table` — geometry changes only,
-//! every input cell reappearing unchanged (see DESIGN.md, "Corpus-ranked build order":
-//! unpivot → explode → split → pivot → merge/transpose).
+//! The reshape verbs. Geometry changes only, every input cell reappearing unchanged (see
+//! DESIGN.md, "Corpus-ranked build order": unpivot → explode → split → pivot → merge/transpose).
+//!
+//! `unpivot`, `explode`, `split`, `merge` and `reorder` look at one row at a time. Each resolves
+//! a `Plan` against its input's shape and then runs it row by row, so the CLI streams them from
+//! an `io::Source` while the `Table` functions here run the same plan over rows in memory.
+//! `pivot` and `transpose` need the whole table and take a `Table`.
 //!
 //! Two rules run through all of them. Values are never altered: `explode`/`split`/`merge` split
 //! and join on the *literal* `--sep` the caller gives (spaces included) and never trim, because
@@ -13,18 +17,141 @@
 
 use crate::addr;
 use crate::errors::{Result, XshapeError};
-use crate::model::{col_to_letter, Table};
+use crate::model::{col_to_letter, Shape, Table};
 
-/// The dense row `r`: every column 0..ncols as an owned string, ragged cells padded to "".
-/// Reshape output is rectangular, so each verb materializes its rows through this. `ncols` is
-/// passed in because `Table::ncols` scans every row, and a per-row call would be quadratic.
-fn dense_row(t: &Table, r: usize, ncols: usize) -> Vec<String> {
-    (0..ncols).map(|c| t.cell(r, c).to_string()).collect()
+/// An input a row-local verb runs over: its shape, and its data rows in order.
+pub trait Input {
+    fn shape(&self) -> Shape;
+    /// Call `f` on each data row in order. A ragged row is passed as it is, short.
+    fn each_row(&self, f: &mut dyn FnMut(&[&str]) -> Result<()>) -> Result<()>;
+}
+
+impl Input for Table {
+    fn shape(&self) -> Shape {
+        Table::shape(self)
+    }
+
+    fn each_row(&self, f: &mut dyn FnMut(&[&str]) -> Result<()>) -> Result<()> {
+        for row in &self.rows {
+            let cells: Vec<&str> = row.iter().map(String::as_str).collect();
+            f(&cells)?;
+        }
+        Ok(())
+    }
+}
+
+/// A row-local reshape resolved against its input's shape: the output header, and what each
+/// input row becomes. Output is rectangular however ragged the input: a short row's missing
+/// cells read as "".
+pub struct Plan {
+    pub header: Option<Vec<String>>,
+    ncols: usize,
+    op: Op,
+}
+
+enum Op {
+    Unpivot {
+        id_cols: Vec<usize>,
+        gather: Vec<(usize, String)>,
+    },
+    Explode {
+        col: usize,
+        sep: String,
+    },
+    Split {
+        col: usize,
+        sep: String,
+        width: usize,
+    },
+    Merge {
+        cols: Vec<usize>,
+        anchor: usize,
+        sep: String,
+    },
+    Reorder {
+        order: Vec<usize>,
+    },
+}
+
+impl Plan {
+    /// Turn one input row into its output rows, passing each to `emit`.
+    pub fn apply(&self, row: &[&str], emit: &mut dyn FnMut(&[&str]) -> Result<()>) -> Result<()> {
+        let cell = |c: usize| row.get(c).copied().unwrap_or("");
+        match &self.op {
+            Op::Unpivot { id_cols, gather } => {
+                let mut out: Vec<&str> = id_cols.iter().map(|&c| cell(c)).collect();
+                for (g, label) in gather {
+                    out.truncate(id_cols.len());
+                    out.push(label);
+                    out.push(cell(*g));
+                    emit(&out)?;
+                }
+            }
+            Op::Explode { col, sep } => {
+                let mut out: Vec<&str> = (0..self.ncols).map(cell).collect();
+                for piece in cell(*col).split(sep.as_str()) {
+                    out[*col] = piece;
+                    emit(&out)?;
+                }
+            }
+            Op::Split { col, sep, width } => {
+                let mut out: Vec<&str> = (0..*col).map(cell).collect();
+                out.extend(cell(*col).split(sep.as_str()));
+                // The plan measured every row, so only input that changed since can overflow.
+                if out.len() - col > *width {
+                    return Err(XshapeError::Input(
+                        "the input changed while it was being read: a row now splits wider \
+                         than the first pass measured"
+                            .into(),
+                    ));
+                }
+                out.resize(col + width, "");
+                out.extend((col + 1..self.ncols).map(cell));
+                emit(&out)?;
+            }
+            Op::Merge { cols, anchor, sep } => {
+                let joined = cols.iter().map(|&c| cell(c)).collect::<Vec<_>>().join(sep);
+                let out: Vec<&str> = (0..self.ncols)
+                    .filter_map(|c| {
+                        if c == *anchor {
+                            Some(joined.as_str())
+                        } else if cols.contains(&c) {
+                            None
+                        } else {
+                            Some(cell(c))
+                        }
+                    })
+                    .collect();
+                emit(&out)?;
+            }
+            Op::Reorder { order } => {
+                let out: Vec<&str> = order.iter().map(|&c| cell(c)).collect();
+                emit(&out)?;
+            }
+        }
+        Ok(())
+    }
+
+    /// Run the plan over a table held in memory.
+    pub fn collect(self, table: &Table) -> Result<Table> {
+        let mut rows = Vec::with_capacity(table.nrows());
+        table.each_row(&mut |row| {
+            self.apply(row, &mut |out| {
+                rows.push(out.iter().map(|s| s.to_string()).collect());
+                Ok(())
+            })
+        })?;
+        Ok(Table {
+            header: self.header,
+            rows,
+            delim: table.delim,
+        })
+    }
 }
 
 /// The header labels for every column (name, or letter where there is no name).
-fn labels(t: &Table) -> Vec<String> {
-    (0..t.ncols()).map(|c| t.col_label(c)).collect()
+fn labels(shape: &Shape) -> Vec<String> {
+    (0..shape.ncols).map(|c| shape.col_label(c)).collect()
 }
 
 /// wide → long. The columns in `cols_spec` are gathered into two new columns: a key column
@@ -34,15 +161,24 @@ fn labels(t: &Table) -> Vec<String> {
 /// Requires a header — the key values *are* the gathered column names. Under `--no-header` there
 /// are no names to gather into, so it errors rather than invent letter keys.
 pub fn unpivot(table: &Table, cols_spec: &str, key_name: &str, value_name: &str) -> Result<Table> {
-    if table.header.is_none() {
+    unpivot_plan(table, cols_spec, key_name, value_name)?.collect(table)
+}
+
+pub fn unpivot_plan(
+    input: &impl Input,
+    cols_spec: &str,
+    key_name: &str,
+    value_name: &str,
+) -> Result<Plan> {
+    let shape = input.shape();
+    if shape.header.is_none() {
         return Err(XshapeError::Input(
             "unpivot needs a header row: the gathered column names become the key values \
              (drop --no-header, or promote the header first with xled)"
                 .into(),
         ));
     }
-    let ncols = table.ncols();
-    let gather = addr::cols(cols_spec, table)?;
+    let gather = addr::cols(cols_spec, &shape)?;
 
     // A column gathered twice is almost certainly a mistake, and it would duplicate the block.
     let mut seen = std::collections::HashSet::new();
@@ -56,31 +192,20 @@ pub fn unpivot(table: &Table, cols_spec: &str, key_name: &str, value_name: &str)
     }
 
     // Identifier columns: everything not gathered, in original left-to-right order.
-    let id_cols: Vec<usize> = (0..ncols).filter(|c| !seen.contains(c)).collect();
+    let id_cols: Vec<usize> = (0..shape.ncols).filter(|c| !seen.contains(c)).collect();
 
     // New header: id labels, then the two synthesized names.
-    let mut header: Vec<String> = id_cols.iter().map(|&c| table.col_label(c)).collect();
+    let mut header: Vec<String> = id_cols.iter().map(|&c| shape.col_label(c)).collect();
     header.push(key_name.to_string());
     header.push(value_name.to_string());
 
-    // One output row per (input row × gathered column).
-    let mut rows = Vec::with_capacity(table.nrows() * gather.len().max(1));
-    for r in 0..table.nrows() {
-        for &g in &gather {
-            let mut row: Vec<String> = id_cols
-                .iter()
-                .map(|&c| table.cell(r, c).to_string())
-                .collect();
-            row.push(table.col_label(g));
-            row.push(table.cell(r, g).to_string());
-            rows.push(row);
-        }
-    }
-
-    Ok(Table {
+    Ok(Plan {
         header: Some(header),
-        rows,
-        delim: table.delim,
+        ncols: shape.ncols,
+        op: Op::Unpivot {
+            id_cols,
+            gather: gather.iter().map(|&g| (g, shape.col_label(g))).collect(),
+        },
     })
 }
 
@@ -92,23 +217,20 @@ pub fn unpivot(table: &Table, cols_spec: &str, key_name: &str, value_name: &str)
 /// A cell with no separator yields one row (itself, unchanged); an empty cell yields one row with
 /// an empty value — the row is never dropped.
 pub fn explode(table: &Table, col_spec: &str, sep: &str) -> Result<Table> {
-    require_sep(sep)?;
-    let col = addr::one_col(col_spec, table)?;
+    explode_plan(table, col_spec, sep)?.collect(table)
+}
 
-    let ncols = table.ncols();
-    let mut rows = Vec::with_capacity(table.nrows());
-    for r in 0..table.nrows() {
-        let base = dense_row(table, r, ncols);
-        for piece in base[col].split(sep) {
-            let mut row = base.clone();
-            row[col] = piece.to_string();
-            rows.push(row);
-        }
-    }
-    Ok(Table {
-        header: table.header.clone(),
-        rows,
-        delim: table.delim,
+pub fn explode_plan(input: &impl Input, col_spec: &str, sep: &str) -> Result<Plan> {
+    require_sep(sep)?;
+    let shape = input.shape();
+    let col = addr::one_col(col_spec, &shape)?;
+    Ok(Plan {
+        header: shape.header,
+        ncols: shape.ncols,
+        op: Op::Explode {
+            col,
+            sep: sep.to_string(),
+        },
     })
 }
 
@@ -118,57 +240,59 @@ pub fn explode(table: &Table, col_spec: &str, sep: &str) -> Result<Table> {
 /// fewer pieces pad with "". If a fixed `--into` is too narrow for some row, xshape errors rather
 /// than silently drop the overflow — a discarded piece would break the no-value-lost rule.
 pub fn split(table: &Table, col_spec: &str, sep: &str, into: Option<&[String]>) -> Result<Table> {
+    split_plan(table, col_spec, sep, into)?.collect(table)
+}
+
+/// Reads every row once to decide the width from real data, before any row is written.
+pub fn split_plan(
+    input: &impl Input,
+    col_spec: &str,
+    sep: &str,
+    into: Option<&[String]>,
+) -> Result<Plan> {
     require_sep(sep)?;
-    let col = addr::one_col(col_spec, table)?;
+    let shape = input.shape();
+    let col = addr::one_col(col_spec, &shape)?;
 
-    // Split every row once; keep the pieces so width and overflow are decided from real data.
-    let pieces: Vec<Vec<String>> = (0..table.nrows())
-        .map(|r| table.cell(r, col).split(sep).map(str::to_string).collect())
-        .collect();
-
-    let width = match into {
-        Some(names) => {
-            if let Some((r, got)) = pieces
-                .iter()
-                .enumerate()
-                .find(|(_, p)| p.len() > names.len())
-            {
+    let mut widest = 1;
+    let mut r = 0;
+    input.each_row(&mut |row| {
+        let got = row.get(col).copied().unwrap_or("").split(sep).count();
+        if let Some(names) = into {
+            if got > names.len() {
                 return Err(XshapeError::Input(format!(
-                    "row {} splits into {} pieces but --into names only {} columns — add names, \
-                     or the extra pieces would be dropped (xshape never discards a value)",
+                    "row {} splits into {got} pieces but --into names only {} columns — add \
+                     names, or the extra pieces would be dropped (xshape never discards a value)",
                     r + 2, // +1 for 0-based, +1 for the header row
-                    got.len(),
                     names.len()
                 )));
             }
-            names.len()
         }
-        None => pieces.iter().map(Vec::len).max().unwrap_or(1),
-    };
+        widest = widest.max(got);
+        r += 1;
+        Ok(())
+    })?;
+    let width = into.map_or(widest, <[String]>::len);
 
     let new_names: Vec<String> = match into {
         Some(names) => names.to_vec(),
         None => {
-            let base = table.col_label(col);
+            let base = shape.col_label(col);
             (1..=width).map(|i| format!("{base}_{i}")).collect()
         }
     };
-
-    let header = table
+    let header = shape
         .header
         .as_ref()
-        .map(|_| splice(&labels(table), col, &new_names));
-    let ncols = table.ncols();
-    let mut rows = Vec::with_capacity(table.nrows());
-    for (r, row_pieces) in pieces.iter().enumerate() {
-        let mut cells = row_pieces.clone();
-        cells.resize(width, String::new()); // pad short rows; never truncate (checked above)
-        rows.push(splice(&dense_row(table, r, ncols), col, &cells));
-    }
-    Ok(Table {
+        .map(|_| splice(&labels(&shape), col, &new_names));
+    Ok(Plan {
         header,
-        rows,
-        delim: table.delim,
+        ncols: shape.ncols,
+        op: Op::Split {
+            col,
+            sep: sep.to_string(),
+            width,
+        },
     })
 }
 
@@ -186,15 +310,16 @@ pub fn pivot(table: &Table, names_from: &str, values_from: &str) -> Result<Table
                 .into(),
         ));
     }
-    let name_col = addr::one_col(names_from, table)?;
-    let val_col = addr::one_col(values_from, table)?;
+    let shape = table.shape();
+    let name_col = addr::one_col(names_from, &shape)?;
+    let val_col = addr::one_col(values_from, &shape)?;
     if name_col == val_col {
         return Err(XshapeError::Input(
             "--names-from and --values-from must be different columns".into(),
         ));
     }
 
-    let id_cols: Vec<usize> = (0..table.ncols())
+    let id_cols: Vec<usize> = (0..shape.ncols)
         .filter(|&c| c != name_col && c != val_col)
         .collect();
 
@@ -258,42 +383,29 @@ pub fn pivot(table: &Table, names_from: &str, values_from: &str) -> Result<Table
 /// place of the leftmost source column; the others are removed. Empty values join too (nothing is
 /// skipped), so `["a", ""]` with sep `;` becomes `"a;"` — a value change would be xled's job.
 pub fn merge(table: &Table, cols_spec: &str, sep: &str, into: &str) -> Result<Table> {
-    let cols = addr::cols(cols_spec, table)?;
+    merge_plan(table, cols_spec, sep, into)?.collect(table)
+}
+
+pub fn merge_plan(input: &impl Input, cols_spec: &str, sep: &str, into: &str) -> Result<Plan> {
+    let shape = input.shape();
+    let cols = addr::cols(cols_spec, &shape)?;
     if cols.len() < 2 {
         return Err(XshapeError::Input(
             "merge needs at least two columns".into(),
         ));
     }
-    let remove: std::collections::HashSet<usize> = cols.iter().copied().collect();
     let anchor = *cols.iter().min().unwrap();
-
-    let build = |cells: &[String]| -> Vec<String> {
-        let joined = cols
-            .iter()
-            .map(|&c| cells[c].clone())
-            .collect::<Vec<_>>()
-            .join(sep);
-        let mut out = Vec::with_capacity(cells.len() - remove.len() + 1);
-        for (c, cell) in cells.iter().enumerate() {
-            if c == anchor {
-                out.push(joined.clone());
-            } else if !remove.contains(&c) {
-                out.push(cell.clone());
-            }
-        }
-        out
-    };
 
     // The merged column's header is just `into` — not a join of the old labels (those describe
     // the parts, not the result). Splice `into` in at the anchor, drop the other source columns.
-    let header = table.header.as_ref().map(|_| {
-        labels(table)
+    let header = shape.header.as_ref().map(|_| {
+        labels(&shape)
             .into_iter()
             .enumerate()
             .filter_map(|(c, name)| {
                 if c == anchor {
                     Some(into.to_string())
-                } else if remove.contains(&c) {
+                } else if cols.contains(&c) {
                     None
                 } else {
                     Some(name)
@@ -301,14 +413,14 @@ pub fn merge(table: &Table, cols_spec: &str, sep: &str, into: &str) -> Result<Ta
             })
             .collect()
     });
-    let ncols = table.ncols();
-    let rows: Vec<Vec<String>> = (0..table.nrows())
-        .map(|r| build(&dense_row(table, r, ncols)))
-        .collect();
-    Ok(Table {
+    Ok(Plan {
         header,
-        rows,
-        delim: table.delim,
+        ncols: shape.ncols,
+        op: Op::Merge {
+            cols,
+            anchor,
+            sep: sep.to_string(),
+        },
     })
 }
 
@@ -327,7 +439,7 @@ pub fn transpose(table: &Table) -> Result<Table> {
         grid.push(row);
     }
     for r in 0..table.nrows() {
-        grid.push(dense_row(table, r, ncols));
+        grid.push((0..ncols).map(|c| table.cell(r, c).to_string()).collect());
     }
 
     // Transpose: new[c][r] = grid[r][c].
@@ -747,7 +859,12 @@ pub enum Place<'a> {
 /// `--cols '[c],[a]'` is also how you swap two columns. Columns nobody named keep their relative
 /// order among themselves.
 pub fn reorder(table: &Table, cols_spec: &str, place: Place<'_>) -> Result<Table> {
-    let moving = addr::cols(cols_spec, table)?;
+    reorder_plan(table, cols_spec, place)?.collect(table)
+}
+
+pub fn reorder_plan(input: &impl Input, cols_spec: &str, place: Place<'_>) -> Result<Plan> {
+    let shape = input.shape();
+    let moving = addr::cols(cols_spec, &shape)?;
 
     // A column named twice would be moved twice, which has no meaning — and silently keeping the
     // first mention would make `--cols '[a],[a]'` quietly differ from what it says.
@@ -756,24 +873,24 @@ pub fn reorder(table: &Table, cols_spec: &str, place: Place<'_>) -> Result<Table
         if !seen.insert(c) {
             return Err(XshapeError::Input(format!(
                 "column {} is named more than once in --cols",
-                table.col_label(c)
+                shape.col_label(c)
             )));
         }
     }
 
     // Everything not moving, in the order it already has.
-    let rest: Vec<usize> = (0..table.ncols()).filter(|c| !seen.contains(c)).collect();
+    let rest: Vec<usize> = (0..shape.ncols).filter(|c| !seen.contains(c)).collect();
 
     let order: Vec<usize> = match place {
         Place::First => moving.iter().chain(rest.iter()).copied().collect(),
         Place::Last => rest.iter().chain(moving.iter()).copied().collect(),
         Place::Before(spec) | Place::After(spec) => {
-            let anchor = addr::one_col(spec, table)?;
+            let anchor = addr::one_col(spec, &shape)?;
             // Moving a column relative to itself has no answer, and picking one would be a guess.
             if seen.contains(&anchor) {
                 return Err(XshapeError::Input(format!(
                     "column {} is both moving and the anchor it moves next to",
-                    table.col_label(anchor)
+                    shape.col_label(anchor)
                 )));
             }
             let at = rest
@@ -784,7 +901,7 @@ pub fn reorder(table: &Table, cols_spec: &str, place: Place<'_>) -> Result<Table
                 Place::Before(_) => at,
                 _ => at + 1,
             };
-            let mut order = Vec::with_capacity(table.ncols());
+            let mut order = Vec::with_capacity(shape.ncols);
             order.extend_from_slice(&rest[..cut]);
             order.extend_from_slice(&moving);
             order.extend_from_slice(&rest[cut..]);
@@ -792,21 +909,13 @@ pub fn reorder(table: &Table, cols_spec: &str, place: Place<'_>) -> Result<Table
         }
     };
 
-    let header = table
+    let header = shape
         .header
         .as_ref()
-        .map(|_| order.iter().map(|&c| table.col_label(c)).collect());
-    let ncols = table.ncols();
-    let rows = (0..table.nrows())
-        .map(|r| {
-            let cells = dense_row(table, r, ncols);
-            order.iter().map(|&c| cells[c].clone()).collect()
-        })
-        .collect();
-
-    Ok(Table {
+        .map(|_| order.iter().map(|&c| shape.col_label(c)).collect());
+    Ok(Plan {
         header,
-        rows,
-        delim: table.delim,
+        ncols: shape.ncols,
+        op: Op::Reorder { order },
     })
 }

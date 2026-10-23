@@ -168,3 +168,42 @@ fn unpivot_without_a_header_is_refused() {
     assert_eq!(code, 1);
     assert!(stderr.contains("unpivot needs a header row"), "{stderr}");
 }
+
+#[test]
+fn in_place_rewrites_the_file_and_keeps_a_backup() {
+    let path = format!("{}/in_place.csv", env!("CARGO_TARGET_TMPDIR"));
+    std::fs::write(&path, TABLE).unwrap();
+    let (_, stderr, code) = run(&["reorder", "--cols", "[qty]", "--first", "-i.bak", &path]);
+    assert_eq!(code, 0, "{stderr}");
+    assert_eq!(
+        std::fs::read_to_string(&path).unwrap(),
+        "qty,id,name\n5,007,Ann\n3,008,Bob\n"
+    );
+    assert_eq!(
+        std::fs::read_to_string(format!("{path}.bak")).unwrap(),
+        TABLE
+    );
+    assert!(!std::path::Path::new(&format!("{path}.xshape-tmp")).exists());
+}
+
+/// Every refusal is raised before the first row is written, so a pipeline never receives half a
+/// table and an in-place edit never touches the file.
+#[test]
+fn a_refusal_writes_nothing() {
+    let input = "id,tags\n1,a\n2,a;b\n";
+    let (stdout, stderr, code) = run_piped(
+        &["split", "--col", "[tags]", "--sep", ";", "--into", "t"],
+        input,
+    );
+    assert_eq!(code, 1);
+    assert!(stderr.contains("row 3 splits into 2 pieces"), "{stderr}");
+    assert_eq!(stdout, "");
+
+    let path = format!("{}/refused.csv", env!("CARGO_TARGET_TMPDIR"));
+    std::fs::write(&path, input).unwrap();
+    let (_, _, code) = run(&[
+        "split", "--col", "[tags]", "--sep", ";", "--into", "t", "-i", &path,
+    ]);
+    assert_eq!(code, 1);
+    assert_eq!(std::fs::read_to_string(&path).unwrap(), input);
+}

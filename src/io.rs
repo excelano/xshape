@@ -1,10 +1,16 @@
 //! Read and write CSV/DSV. Tolerant on input (ragged rows, flexible widths); the `csv`
 //! crate handles quoting and embedded newlines. Values are kept as strings so leading
 //! zeros and long IDs survive a reshape untouched.
+//!
+//! Author: David M. Anderson
+//! Built with AI assistance (Claude, Anthropic)
 
 use crate::errors::{Result, XshapeError};
-use crate::model::Table;
-use csv::{ReaderBuilder, WriterBuilder};
+use crate::model::{Shape, Table};
+use crate::verbs::Input;
+use csv::{ReaderBuilder, StringRecord, WriterBuilder};
+use std::fs::File;
+use std::io::Read;
 use std::path::Path;
 
 fn io_err(e: impl std::fmt::Display) -> XshapeError {
@@ -14,44 +20,117 @@ fn io_err(e: impl std::fmt::Display) -> XshapeError {
 /// Parse CSV/DSV text into a table. When `has_header`, the first record becomes the
 /// name overlay; otherwise every record is data (columns reachable only by letter).
 pub fn read_str(data: &str, delim: u8, has_header: bool) -> Result<Table> {
-    let mut rdr = ReaderBuilder::new()
-        .delimiter(delim)
-        .has_headers(false)
-        .flexible(true)
-        .from_reader(data.as_bytes());
-
-    let mut records: Vec<Vec<String>> = Vec::new();
-    for rec in rdr.records() {
-        let rec = rec.map_err(io_err)?;
-        records.push(rec.iter().map(|s| s.to_string()).collect());
-    }
-
-    let (header, rows) = if has_header && !records.is_empty() {
-        let h = records.remove(0);
-        (Some(h), records)
-    } else {
-        (None, records)
-    };
-
-    Ok(Table {
-        header,
-        rows,
-        delim,
-    })
+    Source::from_bytes(data.as_bytes().to_vec(), delim, has_header)?.table()
 }
 
-/// Read a file, choosing the delimiter from its extension unless one is given.
-pub fn read_file(path: &str, delim: Option<u8>, has_header: bool) -> Result<Table> {
-    sniff_and_warn(path);
-    // Name the file in the error. A bare "No such file or directory" is useless
-    // in a script that reads several, and the OS error alone does not carry it.
-    let data =
-        std::fs::read_to_string(path).map_err(|e| XshapeError::Io(format!("{path}: {e}")))?;
-    // UTF-8 BOM from Excel "Save as CSV UTF-8" — strip it so the first column
-    // name doesn't carry a U+FEFF character.
-    let trimmed = data.strip_prefix('\u{FEFF}').unwrap_or(&data);
-    let delim = delim.unwrap_or_else(|| default_delim(path));
-    read_str(trimmed, delim, has_header)
+/// An input read in passes rather than held as a table. Opening it parses every record once to
+/// learn the shape, so a malformed file fails before any output is written; each later pass
+/// parses again from the start. A file is re-read from disk, and piped input is kept as its raw
+/// bytes, a fraction of the size of the parsed table.
+pub struct Source {
+    data: Data,
+    has_header: bool,
+    shape: Shape,
+}
+
+enum Data {
+    File(String),
+    Bytes(Vec<u8>),
+}
+
+impl Source {
+    /// Open a file, choosing the delimiter from its extension unless one is given.
+    pub fn open(path: &str, delim: Option<u8>, has_header: bool) -> Result<Source> {
+        sniff_and_warn(path);
+        let delim = delim.unwrap_or_else(|| default_delim(path));
+        Source::scan(Data::File(path.to_string()), delim, has_header)
+    }
+
+    pub fn from_bytes(data: Vec<u8>, delim: u8, has_header: bool) -> Result<Source> {
+        Source::scan(Data::Bytes(data), delim, has_header)
+    }
+
+    fn scan(data: Data, delim: u8, has_header: bool) -> Result<Source> {
+        let mut source = Source {
+            data,
+            has_header,
+            shape: Shape {
+                header: None,
+                nrows: 0,
+                ncols: 0,
+                delim,
+            },
+        };
+        let (mut header, mut nrows, mut ncols) = (None, 0, 0);
+        source.records(&mut |first, rec| {
+            ncols = ncols.max(rec.len());
+            if first && has_header {
+                header = Some(rec.iter().map(str::to_string).collect());
+            } else {
+                nrows += 1;
+            }
+            Ok(())
+        })?;
+        source.shape.header = header;
+        source.shape.nrows = nrows;
+        source.shape.ncols = ncols;
+        Ok(source)
+    }
+
+    /// One pass over every record, header included. The csv reader strips a UTF-8 BOM (Excel's
+    /// "CSV UTF-8"), so the first column name does not carry a U+FEFF.
+    fn records(&self, f: &mut dyn FnMut(bool, &StringRecord) -> Result<()>) -> Result<()> {
+        let input: Box<dyn Read + '_> = match &self.data {
+            Data::File(path) => {
+                // Name the file in the error. A bare "No such file or directory" is useless
+                // in a script that reads several, and the OS error alone does not carry it.
+                Box::new(File::open(path).map_err(|e| XshapeError::Io(format!("{path}: {e}")))?)
+            }
+            Data::Bytes(bytes) => Box::new(bytes.as_slice()),
+        };
+        let mut rdr = ReaderBuilder::new()
+            .delimiter(self.shape.delim)
+            .has_headers(false)
+            .flexible(true)
+            .from_reader(input);
+        let mut rec = StringRecord::new();
+        let mut first = true;
+        while rdr.read_record(&mut rec).map_err(io_err)? {
+            f(first, &rec)?;
+            first = false;
+        }
+        Ok(())
+    }
+
+    /// The whole input as a table, for the verbs that need every row at once.
+    pub fn table(&self) -> Result<Table> {
+        let mut rows = Vec::with_capacity(self.shape.nrows);
+        self.each_row(&mut |row| {
+            rows.push(row.iter().map(|s| s.to_string()).collect());
+            Ok(())
+        })?;
+        Ok(Table {
+            header: self.shape.header.clone(),
+            rows,
+            delim: self.shape.delim,
+        })
+    }
+}
+
+impl Input for Source {
+    fn shape(&self) -> Shape {
+        self.shape.clone()
+    }
+
+    fn each_row(&self, f: &mut dyn FnMut(&[&str]) -> Result<()>) -> Result<()> {
+        self.records(&mut |first, rec| {
+            if first && self.has_header {
+                return Ok(());
+            }
+            let cells: Vec<&str> = rec.iter().collect();
+            f(&cells)
+        })
+    }
 }
 
 /// Sniff the file head for non-UTF-8 encodings and emit a one-line iconv hint when

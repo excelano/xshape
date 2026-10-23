@@ -8,7 +8,10 @@
 //! Addressing itself is not here. Column letters, bracketed names, and ranges live in the
 //! `xaddr` crate, which xled uses too, so the dialect is one implementation rather than two
 //! that agree in the middle and drift at the edges. This module only teaches `xaddr` what
-//! shape this table is, via the `Grid` impl below.
+//! shape this table is, via the `Grid` impl on `Shape` below.
+//!
+//! Author: David M. Anderson
+//! Built with AI assistance (Claude, Anthropic)
 
 #[derive(Clone, Debug)]
 pub struct Table {
@@ -61,22 +64,52 @@ impl Table {
     pub fn name_to_col(&self, name: &str) -> Option<usize> {
         self.header.as_ref()?.iter().position(|h| h == name)
     }
+
+    pub fn shape(&self) -> Shape {
+        Shape {
+            header: self.header.clone(),
+            nrows: self.nrows(),
+            ncols: self.ncols(),
+            delim: self.delim,
+        }
+    }
+}
+
+/// What a verb needs to know about its input before the first row: the header, the row count,
+/// the logical width (the widest of the header and any data row), and the delimiter. A streamed
+/// input learns it in a first pass; a `Table` computes it from its rows.
+#[derive(Clone, Debug)]
+pub struct Shape {
+    pub header: Option<Vec<String>>,
+    pub nrows: usize,
+    pub ncols: usize,
+    pub delim: u8,
+}
+
+impl Shape {
+    /// The label to show for a column: its header name, or its letter when there is no header.
+    pub fn col_label(&self, c: usize) -> String {
+        self.header
+            .as_ref()
+            .and_then(|h| h.get(c))
+            .cloned()
+            .unwrap_or_else(|| col_to_letter(c))
+    }
 }
 
 /// Column letters ↔ index lives in `xaddr` now, so xshape and xled cannot drift apart on it.
 pub use xaddr::col_to_letter;
 
-/// Everything `xaddr` needs to resolve an address against this table.
+/// Everything `xaddr` needs to resolve an address against an input of this shape.
 ///
-/// `name_to_col` is left to the trait's default, which is the same exact, case-sensitive
-/// position match the inherent method does.
-impl xaddr::Grid for Table {
+/// `name_to_col` is left to the trait's default: an exact, case-sensitive position match.
+impl xaddr::Grid for Shape {
     fn nrows(&self) -> usize {
-        Table::nrows(self)
+        self.nrows
     }
 
     fn ncols(&self) -> usize {
-        Table::ncols(self)
+        self.ncols
     }
 
     fn header(&self) -> Option<&[String]> {

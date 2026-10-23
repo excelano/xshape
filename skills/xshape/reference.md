@@ -24,6 +24,12 @@ Output: the reshaped table to **stdout** (the preview), advisory notices to **st
 `-i` requires a real FILE, however stdin was spelled. A UTF-8 BOM is stripped on read;
 non-UTF-8 input draws an encoding warning with an `iconv` hint (via encsniff).
 
+`unpivot`, `explode`, `split`, `merge` and `reorder` stream: memory stays flat however large
+the file, and piped input costs about its own size. Each reads its input more than once, and
+raises every refusal before the first row is written, so a pipeline never receives half a
+table. `pivot` and `transpose` hold the whole table in memory. `-i` writes a temporary file
+beside the original and renames it over it, keeping the original's permissions.
+
 Omitting FILE and writing `-` mean the same thing, so a caller that would rather be
 explicit can be. They differ in one place: a bare `xshape <verb>` at a terminal, with
 nothing piped in, is a usage error rather than a silent wait, while an explicit `-` blocks

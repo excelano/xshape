@@ -15,7 +15,10 @@ use clap::{Args, Parser, Subcommand};
 use std::fs;
 use std::io::{self, IsTerminal, Read, Write};
 use std::process::exit;
-use xshape::{io as xio, verbs, Result, XshapeError};
+use xshape::io::{self as xio, Source};
+use xshape::model::Table;
+use xshape::verbs::{self, Input};
+use xshape::{Result, XshapeError};
 
 /// What each exit status means, so a caller can branch on the number instead of on the
 /// message. A reshape that has nothing to do — no columns matched, one row to transpose —
@@ -239,35 +242,35 @@ fn run(verb: Verb) -> Result<()> {
     match verb {
         Verb::Unpivot(a) => {
             let (key, value) = parse_pair(&a.into, "--into")?;
-            let (table, source) = load(&a.common)?;
-            let out = verbs::unpivot(&table, &a.cols, &key, &value)?;
-            emit(&out, &a.common, source)
+            let source = open(&a.common)?;
+            let plan = verbs::unpivot_plan(&source, &a.cols, &key, &value)?;
+            emit_plan(&plan, &source, &a.common)
         }
         Verb::Pivot(a) => {
-            let (table, source) = load(&a.common)?;
-            let out = verbs::pivot(&table, &a.names_from, &a.values_from)?;
-            emit(&out, &a.common, source)
+            let source = open(&a.common)?;
+            let out = verbs::pivot(&source.table()?, &a.names_from, &a.values_from)?;
+            emit_table(&out, &a.common)
         }
         Verb::Split(a) => {
             let into = a.into.as_deref().map(parse_list);
-            let (table, source) = load(&a.common)?;
-            let out = verbs::split(&table, &a.col, &a.sep, into.as_deref())?;
-            emit(&out, &a.common, source)
+            let source = open(&a.common)?;
+            let plan = verbs::split_plan(&source, &a.col, &a.sep, into.as_deref())?;
+            emit_plan(&plan, &source, &a.common)
         }
         Verb::Explode(a) => {
-            let (table, source) = load(&a.common)?;
-            let out = verbs::explode(&table, &a.col, &a.sep)?;
-            emit(&out, &a.common, source)
+            let source = open(&a.common)?;
+            let plan = verbs::explode_plan(&source, &a.col, &a.sep)?;
+            emit_plan(&plan, &source, &a.common)
         }
         Verb::Merge(a) => {
-            let (table, source) = load(&a.common)?;
-            let out = verbs::merge(&table, &a.cols, &a.sep, &a.into)?;
-            emit(&out, &a.common, source)
+            let source = open(&a.common)?;
+            let plan = verbs::merge_plan(&source, &a.cols, &a.sep, &a.into)?;
+            emit_plan(&plan, &source, &a.common)
         }
         Verb::Transpose(a) => {
-            let (table, source) = load(&a.common)?;
-            let out = verbs::transpose(&table)?;
-            emit(&out, &a.common, source)
+            let source = open(&a.common)?;
+            let out = verbs::transpose(&source.table()?)?;
+            emit_table(&out, &a.common)
         }
         Verb::Reorder(a) => {
             // clap's group guarantees exactly one of the four is set.
@@ -280,14 +283,13 @@ fn run(verb: Verb) -> Result<()> {
             } else {
                 verbs::Place::Last
             };
-            let (table, source) = load(&a.common)?;
-            let out = verbs::reorder(&table, &a.cols, place)?;
-            emit(&out, &a.common, source)
+            let source = open(&a.common)?;
+            let plan = verbs::reorder_plan(&source, &a.cols, place)?;
+            emit_plan(&plan, &source, &a.common)
         }
     }
 }
 
-/// Split a `KEY,VALUE` pair argument, requiring exactly two comma-separated parts.
 fn parse_pair(s: &str, flag: &str) -> Result<(String, String)> {
     let parts: Vec<&str> = s.splitn(2, ',').collect();
     if parts.len() != 2 || parts[0].is_empty() || parts[1].is_empty() {
@@ -311,56 +313,102 @@ fn parse_list(s: &str) -> Vec<String> {
 /// that would rather say what it means than rely on the omission. A bare `xshape VERB` at a
 /// terminal has no input coming, so it says so instead of sitting on a stdin nobody is
 /// writing to. An explicit `-` still blocks, the way `cat -` does: that was asked for.
-fn load(c: &Common) -> Result<(xshape::model::Table, Option<String>)> {
+/// The input file, if one was named; `-` means stdin, the same as naming none.
+fn input_path(c: &Common) -> Option<&str> {
+    c.file.as_deref().filter(|p| *p != "-")
+}
+
+fn open(c: &Common) -> Result<Source> {
     let has_header = !c.no_header;
-    let delim = c.delim;
-    let path = c.file.as_deref().filter(|p| *p != "-");
-    match path {
-        Some(path) => Ok((
-            xio::read_file(path, delim, has_header)?,
-            Some(path.to_string()),
-        )),
+    match input_path(c) {
+        Some(path) => Source::open(path, c.delim, has_header),
         None => {
             if c.file.is_none() && io::stdin().is_terminal() {
                 eprintln!("xshape: no input — give a file, or pipe data in");
                 exit(2);
             }
-            let mut data = String::new();
-            io::stdin().read_to_string(&mut data)?;
-            Ok((
-                xio::read_str(&data, delim.unwrap_or(b','), has_header)?,
-                None,
-            ))
+            let mut data = Vec::new();
+            io::stdin().read_to_end(&mut data)?;
+            Source::from_bytes(data, c.delim.unwrap_or(b','), has_header)
         }
     }
 }
 
-/// Send the reshaped table to its destination: stdout by default, or — when `-i` is set and a
-/// source file exists — back to that file, copying it to `<file><suffix>` first if a backup
-/// suffix was given. `-i` over piped stdin has no file to edit and is an error.
-fn emit(out: &xshape::model::Table, c: &Common, source: Option<String>) -> Result<()> {
-    let text = xio::serialize(out)?;
-    match (c.in_place.as_deref(), source) {
-        (Some(suffix), Some(path)) => {
-            if !suffix.is_empty() {
-                fs::copy(&path, format!("{path}{suffix}"))
-                    .map_err(|e| XshapeError::Io(e.to_string()))?;
-            }
-            fs::write(&path, &text).map_err(|e| XshapeError::Io(e.to_string()))
+/// Stream a row-local verb: each output row is written as soon as it is built.
+fn emit_plan(plan: &verbs::Plan, source: &Source, c: &Common) -> Result<()> {
+    write_out(c, source.shape().delim, |w| {
+        if let Some(h) = &plan.header {
+            record(w, h)?;
         }
+        source.each_row(&mut |row| plan.apply(row, &mut |out| record(w, out)))
+    })
+}
+
+fn emit_table(out: &Table, c: &Common) -> Result<()> {
+    write_out(c, out.delim, |w| {
+        if let Some(h) = &out.header {
+            record(w, h)?;
+        }
+        out.rows.iter().try_for_each(|row| record(w, row))
+    })
+}
+
+type Out = csv::Writer<Box<dyn Write>>;
+
+/// Write the reshaped table to stdout, or with `-i` to a temporary file beside the original that
+/// is then renamed over it, so a failed write never leaves the file half-replaced.
+fn write_out(c: &Common, delim: u8, body: impl FnOnce(&mut Out) -> Result<()>) -> Result<()> {
+    let writer = |w: Box<dyn Write>| {
+        csv::WriterBuilder::new()
+            .delimiter(delim)
+            .flexible(true)
+            .from_writer(w)
+    };
+    match (c.in_place.as_deref(), input_path(c)) {
         (Some(_), None) => Err(XshapeError::Input(
             "-i edits a file in place — it needs a file argument, not stdin".into(),
         )),
-        (None, _) => write_stdout(&text),
+        (None, _) => {
+            let mut w = writer(Box::new(io::BufWriter::new(io::stdout().lock())));
+            body(&mut w)?;
+            w.flush().map_err(write_err)
+        }
+        (Some(suffix), Some(path)) => {
+            let tmp = format!("{path}.xshape-tmp");
+            let result = (|| {
+                let mut w = writer(Box::new(io::BufWriter::new(fs::File::create(&tmp)?)));
+                body(&mut w)?;
+                w.flush().map_err(write_err)?;
+                drop(w);
+                fs::set_permissions(&tmp, fs::metadata(path)?.permissions())?;
+                if !suffix.is_empty() {
+                    fs::copy(path, format!("{path}{suffix}"))?;
+                }
+                Ok(fs::rename(&tmp, path)?)
+            })();
+            if result.is_err() {
+                let _ = fs::remove_file(&tmp);
+            }
+            result
+        }
     }
 }
 
-/// Write to stdout, exiting cleanly when the reader closes the pipe early (`xshape … | head`).
-fn write_stdout(s: &str) -> Result<()> {
-    let mut out = io::stdout().lock();
-    match out.write_all(s.as_bytes()).and_then(|()| out.flush()) {
-        Ok(()) => Ok(()),
-        Err(e) if e.kind() == io::ErrorKind::BrokenPipe => exit(0),
-        Err(e) => Err(XshapeError::Io(e.to_string())),
+fn record<I>(w: &mut Out, cells: I) -> Result<()>
+where
+    I: IntoIterator,
+    I::Item: AsRef<[u8]>,
+{
+    w.write_record(cells).map_err(|e| match e.into_kind() {
+        csv::ErrorKind::Io(e) => write_err(e),
+        kind => XshapeError::Io(format!("{kind:?}")),
+    })
+}
+
+/// A closed stdout (`xshape … | head`) is a reader that has what it wanted, not a failure.
+fn write_err(e: io::Error) -> XshapeError {
+    if e.kind() == io::ErrorKind::BrokenPipe {
+        exit(0);
     }
+    XshapeError::Io(e.to_string())
 }

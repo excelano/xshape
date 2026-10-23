@@ -13,7 +13,7 @@
 //! is worse than stopping. (xled clamps instead, deliberately — see `xaddr::Bounds`.)
 
 use crate::errors::{Result, XshapeError};
-use crate::model::Table;
+use crate::model::Shape;
 use xaddr::Bounds;
 
 /// Resolve a column spec to an ordered list of 0-based column indices.
@@ -24,11 +24,11 @@ use xaddr::Bounds;
 ///
 /// A file read with the wrong delimiter arrives as one wide column, so a failed lookup against a
 /// one-column header that contains a tab says to pass `-d '\t'`.
-pub fn cols(spec: &str, table: &Table) -> Result<Vec<usize>> {
+pub fn cols(spec: &str, shape: &Shape) -> Result<Vec<usize>> {
     xaddr::parse(spec)?
-        .columns(table, Bounds::Strict)
-        .map_err(|e| match table.header.as_deref() {
-            Some([only]) if table.delim != b'\t' && only.contains('\t') => {
+        .columns(shape, Bounds::Strict)
+        .map_err(|e| match shape.header.as_deref() {
+            Some([only]) if shape.delim != b'\t' && only.contains('\t') => {
                 XshapeError::Address(format!(
                     "{} (the header is one column containing tabs: pass -d '\\t')",
                     e.message
@@ -40,8 +40,8 @@ pub fn cols(spec: &str, table: &Table) -> Result<Vec<usize>> {
 
 /// Resolve exactly one column from a spec, rejecting lists and ranges. For verbs that name a
 /// single column (`split --col`, `pivot --names-from`).
-pub fn one_col(spec: &str, table: &Table) -> Result<usize> {
-    let cs = cols(spec, table)?;
+pub fn one_col(spec: &str, shape: &Shape) -> Result<usize> {
+    let cs = cols(spec, shape)?;
     if cs.len() != 1 {
         return Err(XshapeError::Address(format!(
             "expected a single column, got {} from {spec:?}",
@@ -56,7 +56,7 @@ mod tests {
     use super::*;
     use crate::model::Table;
 
-    fn table() -> Table {
+    fn table() -> Shape {
         Table {
             header: Some(vec![
                 "id".into(),
@@ -68,14 +68,16 @@ mod tests {
             rows: vec![],
             delim: b',',
         }
+        .shape()
     }
 
-    fn headerless() -> Table {
+    fn headerless() -> Shape {
         Table {
             header: None,
             rows: vec![vec!["a".into(), "b".into()]],
             delim: b',',
         }
+        .shape()
     }
 
     #[test]
