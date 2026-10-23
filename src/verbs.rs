@@ -16,9 +16,10 @@ use crate::errors::{Result, XshapeError};
 use crate::model::{col_to_letter, Table};
 
 /// The dense row `r`: every column 0..ncols as an owned string, ragged cells padded to "".
-/// Reshape output is rectangular, so each verb materializes its rows through this.
-fn dense_row(t: &Table, r: usize) -> Vec<String> {
-    (0..t.ncols()).map(|c| t.cell(r, c).to_string()).collect()
+/// Reshape output is rectangular, so each verb materializes its rows through this. `ncols` is
+/// passed in because `Table::ncols` scans every row, and a per-row call would be quadratic.
+fn dense_row(t: &Table, r: usize, ncols: usize) -> Vec<String> {
+    (0..ncols).map(|c| t.cell(r, c).to_string()).collect()
 }
 
 /// The header labels for every column (name, or letter where there is no name).
@@ -94,9 +95,10 @@ pub fn explode(table: &Table, col_spec: &str, sep: &str) -> Result<Table> {
     require_sep(sep)?;
     let col = addr::one_col(col_spec, table)?;
 
+    let ncols = table.ncols();
     let mut rows = Vec::with_capacity(table.nrows());
     for r in 0..table.nrows() {
-        let base = dense_row(table, r);
+        let base = dense_row(table, r, ncols);
         for piece in base[col].split(sep) {
             let mut row = base.clone();
             row[col] = piece.to_string();
@@ -156,11 +158,12 @@ pub fn split(table: &Table, col_spec: &str, sep: &str, into: Option<&[String]>) 
         .header
         .as_ref()
         .map(|_| splice(&labels(table), col, &new_names));
+    let ncols = table.ncols();
     let mut rows = Vec::with_capacity(table.nrows());
     for (r, row_pieces) in pieces.iter().enumerate() {
         let mut cells = row_pieces.clone();
         cells.resize(width, String::new()); // pad short rows; never truncate (checked above)
-        rows.push(splice(&dense_row(table, r), col, &cells));
+        rows.push(splice(&dense_row(table, r, ncols), col, &cells));
     }
     Ok(Table {
         header,
@@ -289,8 +292,9 @@ pub fn merge(table: &Table, cols_spec: &str, sep: &str, into: &str) -> Result<Ta
             })
             .collect()
     });
+    let ncols = table.ncols();
     let rows: Vec<Vec<String>> = (0..table.nrows())
-        .map(|r| build(&dense_row(table, r)))
+        .map(|r| build(&dense_row(table, r, ncols)))
         .collect();
     Ok(Table {
         header,
@@ -314,7 +318,7 @@ pub fn transpose(table: &Table) -> Result<Table> {
         grid.push(row);
     }
     for r in 0..table.nrows() {
-        grid.push(dense_row(table, r));
+        grid.push(dense_row(table, r, ncols));
     }
 
     // Transpose: new[c][r] = grid[r][c].
@@ -769,9 +773,10 @@ pub fn reorder(table: &Table, cols_spec: &str, place: Place<'_>) -> Result<Table
         .header
         .as_ref()
         .map(|_| order.iter().map(|&c| table.col_label(c)).collect());
+    let ncols = table.ncols();
     let rows = (0..table.nrows())
         .map(|r| {
-            let cells = dense_row(table, r);
+            let cells = dense_row(table, r, ncols);
             order.iter().map(|&c| cells[c].clone()).collect()
         })
         .collect();
