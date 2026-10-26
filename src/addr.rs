@@ -11,6 +11,9 @@
 //! quietly projected onto its column. And bounds are `Strict`: a reshape that ran past the
 //! edge of the table would silently do less than it was asked, which for a destructive verb
 //! is worse than stopping. (xled clamps instead, deliberately — see `xaddr::Bounds`.)
+//!
+//! Author: David M. Anderson
+//! Built with AI assistance (Claude, Anthropic)
 
 use crate::errors::{Result, XshapeError};
 use crate::model::Shape;
