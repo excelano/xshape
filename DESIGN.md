@@ -6,7 +6,7 @@
 
 ## The problem
 
-xled and xql share a boundary that neither will cross, and the tools that live on the far side of it are all general-purpose reshapers borrowed from other ecosystems — Miller, tidyr, pandas `melt`/`pivot`. The recurring need is small and specific: a wide export has to go long before it can be queried; a "long" event log has to spread into a matrix before a human can read it; a single column holds three values glued by a delimiter and has to become three columns; the whole sheet arrived transposed. None of this changes what the data *says*. It only changes which axis holds what. That is a distinct job, and right now it has no home in the owned stack, so the reach is always for a general tool with a hundred other features attached.
+xled and xql share a boundary that neither will cross, and the tools that live on the far side of it are all general-purpose reshapers borrowed from other ecosystems — Miller, tidyr, pandas `melt`/`pivot`. The recurring need is small and specific: a wide export has to go long before it can be queried; a "long" event log has to spread into a matrix before a human can read it; a single column holds three values glued by a delimiter and has to become three columns; the whole sheet arrived transposed. None of this changes what the data *says*. It only changes which axis holds what. That is a distinct job, and without xshape it has no home in the owned stack, so the reach is for a general tool with a hundred other features attached.
 
 Built for one user's real need, not a market. The need is the shape-change that shows up mid-session when a table is correct but oriented wrong for the next step.
 
@@ -16,13 +16,13 @@ The primary user is Claude Code, working alongside David inside a live data sess
 
 ## The boundary — geometry, not content
 
-This is the line that keeps xshape focused and keeps it from becoming a second, worse xql. State it precisely:
+This is the line that keeps xshape focused and keeps it from becoming a second, worse xql:
 
-**xshape changes the *geometry* of the grid — which axis holds which cells — and never changes, filters, computes, or aggregates a value.** Every cell that goes in comes out somewhere else, unchanged. Nothing is invented, summarised, or dropped by predicate.
+**xshape changes the *geometry* of the grid — which axis holds which cells — and never changes, filters, computes, or aggregates a value.** Every cell that goes in comes out somewhere else, unchanged. Nothing is invented, summarized, or dropped by predicate.
 
 That single rule settles the tool's hardest temptation. A pivot in SQL or pandas usually carries an aggregation (`pivot … SUM(spend)`) because two source rows can collide into one output cell. **xshape's pivot does not aggregate.** It assumes the key/value pairs are unique and *errors loudly on a collision* rather than silently summing — because the moment a reshape needs an aggregation function, it has stopped being a reshape and become a query, and queries belong to xql or DuckDB. This is the same discipline as xled's "never coerce a value you didn't ask it to," applied one level up: never *combine* two values you didn't ask it to.
 
-The clean three-way split across the family:
+The split across the family:
 
 | Tool  | Changes | Leaves alone |
 |-------|---------|--------------|
@@ -44,19 +44,20 @@ A small set of reshape verbs, each a subcommand, each named after the canonical 
 
 ## Shared grammar
 
-xshape must speak the **same addressing dialect as xled** — column letters (`C`, `AF`), bracketed header names (`[first name]`, `[price (USD)]`), and A1 ranges (`B2:C3`) — so a user (human or LLM) who has learned to point at a column in xled points at it identically here. Cross-family consistency is worth more than any per-tool cleverness; the family should feel like one dialect with different verbs, not three tools that each reinvented addressing. This is a hard requirement, not a nicety, and it is the strongest reason to share code or at least a spec with xled from day one.
+xshape speaks the **same addressing dialect as xled** — column letters (`C`, `AF`), bracketed header names (`[first name]`, `[price (USD)]`), and column ranges (`E:K`, `[fy2020]:[fy2026]`) — so a user (human or LLM) who has learned to point at a column in xled points at it identically here. Cross-family consistency is worth more than any per-tool cleverness; the family should feel like one dialect with different verbs, not tools that each reinvented addressing. Every verb acts on whole columns, so an address that names a row or a cell range (`B2:C3`) is rejected rather than projected onto its columns.
 
 ## Non-goals — who gets each near-miss
 
 - Editing values inside cells (strip, recase, derive) → **xled**.
-- Filter, aggregate, group, dedup, join → **xql** (single-table) / whichever SQL engine is installed (relational: `duckdb`, `sqlite3`, `csvsql`).
+- Filter, aggregate, group, dedup → **xql**.
+- Join across files → a SQL engine such as DuckDB (`duckdb`, `sqlite3`, `csvsql`, whichever is installed).
 - Aggregating pivot (`pivot … SUM/COUNT`) → **xql**. xshape's pivot errors on the collision that would require it.
-- Format conversion (`.xlsx`/JSON ↔ CSV) → this2that / ditto.
+- Format conversion (`.xlsx`/JSON ↔ CSV) → **this2that**.
 - Profiling / "what is this file" → **xray**.
 
 ## Addressing
 
-Addressing is the shared `xaddr` crate, which xled uses too, so the two tools cannot drift apart on the dialect; `xaddr`'s `tests/conformance.rs` is the suite that holds both to it.
+Addressing is the shared `xaddr` crate, which xled uses too, so the two tools cannot drift apart on the dialect; `xaddr`'s conformance suite holds both to it.
 
 ## Separators are never guessed
 
@@ -68,4 +69,4 @@ Addressing is the shared `xaddr` crate, which xled uses too, so the two tools ca
 
 ## Preview and commit
 
-The reshaped table goes to stdout by default (stdout *is* the preview) and `-i` / `--in-place[=.bak]` commits back to the file, sed-style, as in xled. There is no REPL: a reshape is a single decisive move, not the iterative cell-scrubbing that earns xled its REPL.
+The reshaped table goes to stdout by default (stdout *is* the preview) and `-i` / `--in-place[=.bak]` commits back to the file, sed-style, as in xled. There is no REPL: a reshape is a single decisive move, not the iterative cell-scrubbing that xled's REPL is for.

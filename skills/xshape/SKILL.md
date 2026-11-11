@@ -5,7 +5,8 @@ description: >-
   long, pivot long to wide, split or merge columns, explode a delimited cell into rows,
   reorder, transpose. Often needed without being named: "one column per year", "months
   across the top", "can't group by year", "three tags in one cell", "one row per value".
-  Not for editing values (xled) or filtering, aggregating, joining or deduping rows (xql).
+  Not for editing values (xled), filtering, aggregating or deduping rows (xql), or joining
+  tables (a SQL engine such as DuckDB).
 ---
 
 # xshape
@@ -39,7 +40,7 @@ bracketed: `--cols 2023:2025` is read as rows and rejected, so write
 
 | Verb | Required flags |
 |---|---|
-| `unpivot` | `--cols`, `--into KEY,VALUE` |
+| `unpivot` | `--cols` (optional `--into KEY,VALUE`, default `name,value`) |
 | `pivot` | `--names-from`, `--values-from` |
 | `split` | `--col`, `--sep` (optional `--into a,b,c`) |
 | `explode` | `--col`, `--sep` |

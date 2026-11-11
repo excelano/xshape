@@ -21,7 +21,7 @@ $ xshape explode --col '[application_names]' --sep '; ' contracts.csv
 
 Every messy-CSV workflow eventually hits the same wall: the data is *correct* but *oriented wrong* for the next step. A wide fiscal-year export has to go long before SQL can group it. A long event log has to spread into a matrix before a human can read it. A cell holds three application names glued by a semicolon and each needs its own row. The sheet arrived transposed. None of this changes what the data says — it only changes which axis holds what.
 
-Until now that job had no home in a focused tool, so the reach was always for a general reshaper with a hundred other features attached — Miller, tidyr, a pandas `melt`/`pivot`/`explode` script. xshape is that one job, done with a bright boundary: it moves cells between the row and column axes, requires you to state your separator (it never guesses one), and **errors rather than aggregate** when two cells would collide — because the moment a reshape needs a `SUM`, it has become a query.
+Without xshape that job has no home in a focused tool, so the reach is for a general reshaper with a hundred other features attached — Miller, tidyr, a pandas `melt`/`pivot`/`explode` script. xshape is that one job, done with a bright boundary: it moves cells between the row and column axes, requires you to state your separator (it never guesses one), and **errors rather than aggregate** when two cells would collide — because the moment a reshape needs a `SUM`, it has become a query.
 
 ## The family
 
@@ -30,7 +30,9 @@ xshape is the reshaping verb in a family of small tools for messy tabular data, 
 - **[xray](https://github.com/excelano/xray)** observes — profiles the file, reports hazards, changes nothing.
 - **[xled](https://github.com/excelano/xled)** edits *cell values* in place (sed and awk for tables).
 - **xshape** changes the *shape* of the grid, and never touches the values.
-- **[xql](https://github.com/excelano/xql)** queries the row *set* — filter, aggregate, group, sort. A join needs a second table, which is a full SQL engine's job.
+- **[xql](https://github.com/excelano/xql)** queries the row *set* — filter, aggregate, group, sort.
+
+A join needs a second table, which is a SQL engine's job (DuckDB, for one), and converting between office formats is [this2that](https://github.com/excelano/this2that)'s.
 
 The line that keeps xshape focused: it moves cells between axes and refuses to aggregate. An aggregating pivot (`pivot … SUM`) is a query — that belongs to xql or DuckDB. xshape shares xled's column-addressing dialect (letters, `[bracketed names]`, ranges), so the family reads as one language with different verbs.
 
@@ -111,4 +113,4 @@ The skill is compiled into the binary, so this works the same however you instal
 
 ## License
 
-MIT.
+MIT. See [LICENSE](LICENSE).

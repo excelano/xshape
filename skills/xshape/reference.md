@@ -223,8 +223,8 @@ duplicate index/column pairs, xshape errors.
 ## What xshape does not do
 
 Filter rows by predicate, aggregate, group, dedupe, sort → **xql**. Join across files →
-whichever SQL engine is installed (`duckdb`, `sqlite3`, `csvsql`). Edit cell values
-(currency, case, padding, computed columns, blank-fill) → **xled**. Profile an unfamiliar
-file → **xray**. Convert formats (`.xlsx`/JSON ↔ CSV) → office-convert / ditto. An
+a SQL engine such as DuckDB (`duckdb`, `sqlite3`, `csvsql`, whichever is installed). Edit
+cell values (currency, case, padding, computed columns, blank-fill) → **xled**. Profile an
+unfamiliar file → **xray**. Convert formats (`.xlsx`/JSON ↔ CSV) → **this2that**. An
 aggregating pivot (`pivot … SUM`) is a query, not a reshape — xshape errors on the
 collision that would require it.
